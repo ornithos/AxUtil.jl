@@ -8,6 +8,6 @@ This is very much a WIP, and usually includes things that are specific to whatev
 * `Math`: a few softmax-y logsumexp-y type functions, plus numerical gradient checking.
 * `MCDiagnostic`: Some Monte Carlo diagnostics, including a few different Effective Sample Size functions and $\hat{R}$.
 * `MCMC`: Currently just an implementation of (Truncated) Metropolis Adjusted Langevin Algorithm (T-MALA).
-* `Misc`: Basically empty at present.
+* `Misc`: Misc functions I miss from python/MATLAB, and faster version of `countmap`.
 * `Plot`: A few useful plotting utilities, including pairplot, axis operations and image tiling.
 * `Random`: Mostly implementations of Multinomial sampling that are currently unavailable in Distributions.jl. Not entirely clear if there is a wider demand for this.
