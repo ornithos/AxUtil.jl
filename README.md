@@ -3,6 +3,7 @@ My utilities package for julia. This is a collection of useful functions that ar
 
 This is very much a WIP, and usually includes things that are specific to whatever I'm currently developing. It is also includes ports of things from `pyalexutil`. Briefly, it currently has the following modules:
 
+* `AMIS`: utilities for Adaptive Mixture Importance Sampling, most \*importantly\* including a _weighted_ GMM EM algo.
 * `Arr`: array functions, operations that I find useful which are not part of `Base`. This is at present kind of trivial.
 * `Flux`: some additions to Flux supported operations for Automatic Differentiation that I have used. The more useful ones (`inv`, `ldiv`, `rdiv`) have been moved into Flux itself.
 * `Math`: a few softmax-y logsumexp-y type functions, plus numerical gradient checking.

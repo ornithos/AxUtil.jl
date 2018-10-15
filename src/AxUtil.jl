@@ -1,5 +1,6 @@
 module AxUtil
 include("arr.jl")
+include("amis.jl")
 include("flux.jl")
 include("math.jl")
 include("mcdiag.jl")
