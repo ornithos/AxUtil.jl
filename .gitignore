@@ -1,0 +1,13 @@
+.idea/
+.DS_Store
+__pycache__/
+__old__/
+__trash__/
+azure/
+*.pickle
+*.png
+*.html
+*.pdf
+.ipynb*
+saved_notebooks/
+plots/
