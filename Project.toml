@@ -1,0 +1,13 @@
+name = "AxUtil"
+uuid = "739e4dca-d06b-11e8-2625-cffd46b96d05"
+authors = ["Alex Bird <abird@turing.ac.uk>"]
+version = "0.1.0"
+
+[deps]
+DSP = "717857b8-e6f2-59f4-9121-6e50c889abd2"
+Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+NNlib = "872c559c-99b0-510c-b3b7-b6c96a88d5cd"
+StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
+StatsFuns = "4c63d2b9-4356-54db-8cca-17b64c39e42c"
