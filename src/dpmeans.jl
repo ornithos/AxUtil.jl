@@ -189,8 +189,8 @@ end
     Loosely based / adapted from code originally written by Vadim Smolyakov.
     https://github.com/vsmolyakov.
 =#
-function dpmeans_fit(X::Matrix{T}; k_init::Int64=3, max_iter::Int64=100,
-                     shuffleX::Bool=true, lambda::T=1.) where T <: Number
+function dpmeans_fit(X::Matrix{T}; k_init::Int=3, max_iter::Int=100,
+                     shuffleX::Bool=true, lambda::T=1., collapse_thrsh::Int=0) where T <: Number
 
     #init params
     k = k_init
@@ -261,7 +261,24 @@ function dpmeans_fit(X::Matrix{T}; k_init::Int64=3, max_iter::Int64=100,
         end
     end
 
+    # collapse tiny clusters
+    if collapse_thrsh > 0
+        k_inds, ks = groupinds(Z)
+        bad_ks_bool = map(length, k_inds) .< collapse_thrsh
+        n_bad_k = sum(bad_ks_bool)
+        if n_bad_k > 0
+            bad_ixs = reduce(vcat, k_inds[findall(bad_ks_bool)])
+            mu = mu[.!bad_ks_bool, :]
+
+            dist = dist_to_centers(X[bad_ixs,:], mu; sq=true)
+            _dmin, z = row_mins(dist)
+            Z[bad_ixs] .= z
+            nks[end] -= sum(bad_ks_bool)
+            # not re-calculating obj because... who cares?
+        end
     return return_order(Z), mu, obj, nks
 end
 
-end
+
+
+end  # module
