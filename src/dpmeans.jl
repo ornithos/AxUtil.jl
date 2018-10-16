@@ -1,6 +1,7 @@
 module dpmeans
 using Distributions, Random
 
+dropdim1(x) = dropdims(x, dims=1)   # useful for pipes
 #= groupinds(x)
   for x isa Vector{Signed}.
   Extract the group of indices which match each unique value in x.
@@ -47,6 +48,22 @@ function dist_to_centers(X::Matrix{T}, M::Matrix{T}; sq=false) where T <: Real
     end
 end
 
+
+function dist_to_centers_colmajor(X::Matrix{T}, M::Matrix{T}; sq=false) where T <: Real
+    d, n = size(X)
+    _d2, k = size(M)
+    @assert (d == _d2) "X and M must have the same row dimension."
+
+    X2    = sum(X .* X, dims=1)
+    X_Mt  = M' * X
+    M2    = sum(M .* M, dims=1)
+    norm2 = (X2 .- 2X_Mt) .+ M2'
+    if sq
+        return norm2
+    else
+        return sqrt.(norm2)
+    end
+end
 #=
   row_mins.
   Helper function for dpmeans. Calculate the minimum of each row, and return
@@ -343,7 +360,7 @@ function dpmeans_fit(X::Matrix{T}; max_iter::Int=100, shuffleX::Bool=true,
     obj_tol = 1e-3
     Z = Vector{Int}(undef, n)
 
-    x_norm² = sum(X .* X, dims=1) |> _x -> dropdims(_x, dims=1)
+    x_norm² = sum(X .* X, dims=1) |> dropdim1
 
     for iter = 1:max_iter
 
@@ -358,7 +375,7 @@ function dpmeans_fit(X::Matrix{T}; max_iter::Int=100, shuffleX::Bool=true,
                 k += 1
                 # append new mean to mu
                 mu = hcat(mu, X[:, nn])
-                addl_mu_terms = -2.0*X[:, nn]' * X[:, nn:end] .+ sum(X[:, nn] .* X[:, nn]) |> _x -> dropdims(_x, dims=1)
+                addl_mu_terms = -2.0*X[:, nn]' * X[:, nn:end] .+ sum(X[:, nn] .* X[:, nn]) |> dropdim1
                 # update c_min / c_z
                 c_mu_term_min[nn:end], c_z[nn:end] = pwise_mins(c_mu_term_min[nn:end], addl_mu_terms,
                                                                 Int32(k), c_z[nn:end])
@@ -395,10 +412,10 @@ function dpmeans_fit(X::Matrix{T}; max_iter::Int=100, shuffleX::Bool=true,
         n_bad_k = sum(bad_ks_bool)
         if n_bad_k > 0
             bad_ixs = reduce(vcat, k_inds[findall(bad_ks_bool)])
-            mu = mu[.!bad_ks_bool, :]
+            mu = mu[:, .!bad_ks_bool]
 
-            dist = dist_to_centers(X[:,bad_ixs]', mu'; sq=true)
-            _dmin, z = row_mins(dist)
+            dist = dist_to_centers_colmajor(X[:, bad_ixs], mu; sq=true)
+            _dmin, z = col_mins(dist)
             Z[bad_ixs] .= z
             nks[end] -= sum(bad_ks_bool)
             # not re-calculating obj because... who cares?
