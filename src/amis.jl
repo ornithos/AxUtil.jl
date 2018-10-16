@@ -1,5 +1,21 @@
 module AMIS
 
+using PyPlot
+using Distributions, Random
+using LinearAlgebra, StatsBase
+using Parameters, Formatting
+# using Clustering
+
+
+# ==> copied from misc.jl. Not sure how to include misc.jl so I can avoid this.
+macro noopwhen(condition, expression)
+    quote
+        if !($condition)
+            $expression
+        end
+    end |> esc
+end
+
 function gmm_llh(X, weights, pis, mus, sigmas; disp=false)
     n, p = size(X)
     k = length(pis)
@@ -119,13 +135,13 @@ end
 
 function sample_from_gmm(n, pis, mus, covs; shuffle=true)
     k, p = size(mus)
-    @mytimeit to "multinomial"  Ns = rand(Multinomial(n, pis[:]))
-    @mytimeit to "active" active_ixs = findall(Ns[:] .>= 1)
+    Ns = rand(Multinomial(n, pis[:]))
+    active_ixs = findall(Ns[:] .>= 1)
     
-    @mytimeit to "findixs" ixs = hcat(vcat(1, 1 .+ cumsum(Ns[1:end-1], dims=1)), cumsum(Ns, dims=1))
+    ixs = hcat(vcat(1, 1 .+ cumsum(Ns[1:end-1], dims=1)), cumsum(Ns, dims=1))
     out = zeros(n, p)
     for j=active_ixs
-        @mytimeit to "MvNorm rand" out[ixs[j,1]:ixs[j,2],:] = rand(MvNormal(mus[j,:], covs[:,:,j]), Ns[j])'
+        out[ixs[j,1]:ixs[j,2],:] = rand(MvNormal(mus[j,:], covs[:,:,j]), Ns[j])'
     end
     if shuffle
         out = out[randperm(n),:]
@@ -143,7 +159,7 @@ end
 
 
 
-function AMIS(S, logW, k, log_f; kwargs...)
+function amis(S, logW, k, log_f; kwargs...)
     @unpack_amis_opt reconstruct(amis_opt(), kwargs)
     n, p = size(S)
     
