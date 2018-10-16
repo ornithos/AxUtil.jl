@@ -18,6 +18,9 @@ function countmap(x::Vector{T}; d::Int=-1) where T <: Signed
 end
 
 
+invert_index(x::Vector{T}) where T <: Signed = sortperm(x)
+
+
 # issue #29560 mkborregaard solution to repelem/rep like behaviour for vectors.
 # Will likely be obselete when PR accepted.
 #

@@ -1,5 +1,5 @@
+module dpmeans
 using Distributions, Random
-using Base.Threads: @threads
 
 #= groupinds(x)
   for x isa Vector{Signed}.
@@ -62,7 +62,7 @@ function row_mins(X::Matrix{T}) where T <: Real
         _argmin = 1
         for dd = 2:d
             if X[nn, dd] < _min
-                _min = X[nn, d]
+                _min = X[nn, dd]
                 _argmin = dd
             end
         end
@@ -220,34 +220,32 @@ function dpmeans_fit(X::Matrix{T}; k_init::Int64=3, max_iter::Int64=100,
 
     for iter = 1:max_iter
 
-        @timeit to "munorm" mu_norm² = dropdims(sum(mu .* mu, dims=2), dims=2)   # useful for calculating distance
+        # @timeit to "munorm" mu_norm² = sum(mu .* mu, dims=2)
+        mu_terms = -2.0*X * mu' .+ sum(mu .* mu, dims=2)'
+        c_mu_term_min, c_z = row_mins(mu_terms)
 
-        @timeit to "mainloop" for nn = 1:n
-            cx = X[nn,:]
-
-            @timeit to "dists"  dists = x_norm²[nn] .+ (-2*mu*cx + mu_norm²)  # <--- 25% time here
-            @timeit to "all_gt_lam" need_new_cls = all(x -> x > λ, dists)   # <--- 12% time here
-            @timeit to "update" if need_new_cls
-                @timeit to "bad" begin
-                    k += 1
-                    Z[nn] = k
-                    mu = vcat(mu, cx')
-                    mu_norm² = vcat(mu_norm², sum(x->x^2, cx))
-                end
-            else
-                @timeit to "good" begin
-                    dist, k = findmin(dists)  # <--- 7-8% time here, but 380 ns a pop...
-                    Z[nn] = k
-                    obj[iter] += dist
-                end
+        for nn = 1:n
+            dist = x_norm²[nn] + c_mu_term_min[nn]
+            need_new_cls = dist > λ
+            if need_new_cls
+                k += 1
+                # append new mean to mu
+                mu = vcat(mu, X[nn,:]')
+                addl_mu_terms = -2.0*X[nn:end,:] * X[nn,:] .+ sum(X[nn,:] .* X[nn,:])
+                # update c_min / c_z
+                c_mu_term_min[nn:end], c_z[nn:end] = pwise_mins(c_mu_term_min[nn:end], addl_mu_terms,
+                                                                Int32(k), c_z[nn:end])
+                dist = 0.
             end
+            Z[nn] = c_z[nn]
+            obj[iter] += dist
         end
 
         obj[iter] = obj[iter] + λ * k
 
         # update means
-        @timeit to "groupind" k_inds, ks = groupinds(Z)
-        @timeit to "update mu" for j = 1:length(ks)
+        k_inds, ks = groupinds(Z)
+        for j = 1:length(ks)
             @views mu[ks[j],:] = mean(X[k_inds[j], :], dims=1)
         end
         nks[iter] = length(ks)
@@ -255,8 +253,8 @@ function dpmeans_fit(X::Matrix{T}; k_init::Int64=3, max_iter::Int64=100,
         #check convergence
         if (iter > 1 && abs(obj[iter] - obj[iter-1]) < obj_tol * obj[iter])
             # println("converged in ", iter, " iterations.")
-            obj[iter+1:max_iter] .= NaN
-            nks[iter+1:max_iter] .= -1
+            obj = obj[1:iter]
+            nks = nks[1:iter]
             break
         elseif iter == max_iter
             @warn "DPmeans not converged"
@@ -266,85 +264,4 @@ function dpmeans_fit(X::Matrix{T}; k_init::Int64=3, max_iter::Int64=100,
     return return_order(Z), mu, obj, nks
 end
 
-
-
-function dpmeans_fit2(X::Matrix{T}; k_init::Int64=3, max_iter::Int64=100,
-                     shuffleX::Bool=true, lambda::T=1.) where T <: Number
-
-    #init params
-    k = k_init
-    n, d = size(X)
-
-    # shuffling (and reordering for end)
-    if shuffleX
-        new_order = randperm(n)
-        X = X[new_order, :]
-        return_order(y::Vector) = y[sortperm(new_order)]
-    else
-        return_order = identity
-    end
-
-    mu = mean(X, dims=1)
-    λ = lambda
-    # mu, λ = kpp_init(X, k)
-
-    obj = zeros(max_iter)
-    nks = zeros(Int32, max_iter)
-
-    obj_tol = 1e-3
-    n, d = size(X)
-    Z = Vector{Int}(undef, n)
-
-    x_norm² = sum(X .* X, dims=2) |> _x -> dropdims(_x, dims=2)
-
-    for iter = 1:max_iter
-
-        # @timeit to "munorm" mu_norm² = sum(mu .* mu, dims=2)
-        @timeit to "xterm" mu_terms = -2.0*X * mu' .+ sum(mu .* mu, dims=2)'
-        @timeit to "rowmin" c_mu_term_min, c_z = row_mins(mu_terms)
-
-        @timeit to "mainloop" for nn = 1:n
-            dist = x_norm²[nn] + c_mu_term_min[nn]
-            need_new_cls = dist > λ
-            @timeit to "update" if need_new_cls
-                @timeit to "bad" begin
-                    k += 1
-                    Z[nn] = k
-
-                    # append new mean to mu
-                    mu = vcat(mu, X[nn,:]')
-                    @timeit to "xterm" addl_mu_terms = -2.0*X[nn:end,:] * X[nn,:] .+ sum(X[nn,:] .* X[nn,:])
-                    # update c_min / c_z
-                    @timeit to "rowmin" c_mu_term_min[nn:end], c_z[nn:end] = pwise_mins(c_mu_term_min[nn:end], addl_mu_terms,
-                                                                    Int32(k), c_z[nn:end])
-                    dist = 0.
-                end
-            end
-            @timeit to "good" begin
-                Z[nn] = c_z[nn]
-                obj[iter] += dist
-            end
-        end
-
-        obj[iter] = obj[iter] + λ * k
-
-        # update means
-        @timeit to "groupind" k_inds, ks = groupinds(Z)
-        @timeit to "update mu" for j = 1:length(ks)
-            @views mu[ks[j],:] = mean(X[k_inds[j], :], dims=1)
-        end
-        nks[iter] = length(ks)
-
-        #check convergence
-        if (iter > 1 && abs(obj[iter] - obj[iter-1]) < obj_tol * obj[iter])
-            # println("converged in ", iter, " iterations.")
-            obj[iter+1:max_iter] .= NaN
-            nks[iter+1:max_iter] .= -1
-            break
-        elseif iter == max_iter
-            @warn "DPmeans not converged"
-        end
-    end
-
-    return return_order(Z), mu, obj, nks
 end
