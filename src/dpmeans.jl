@@ -73,6 +73,32 @@ function row_mins(X::Matrix{T}) where T <: Real
 end
 
 
+#=
+  col_mins.
+  Helper function for dpmeans. Calculate the minimum of each col, and return
+  the argmin in the second argument. MUCH MUCH faster than mapslices to
+  `findmin`.
+=#
+function col_mins(X::Matrix{T}) where T <: Real
+    d, n = size(X)
+    out_v = Vector{T}(undef, n)
+    out_ind = Vector{Int32}(undef, n)
+    for nn = 1:n
+        _min = X[1, nn]
+        _argmin = 1
+        for dd = 2:d
+            if X[dd, nn] < _min
+                _min = X[dd, nn]
+                _argmin = dd
+            end
+        end
+        out_v[nn] = _min
+        out_ind[nn] = _argmin
+    end
+    return out_v, out_ind
+end
+
+
 function pwise_mins(x::Vector{T}, y::Vector{T}, y_ind_id::Int32=Int32(2),
                     ind_if_x_wins::Union{Vector{Int32}, Nothing}=nothing,
                     val_if_x_wins::Union{Vector{T}, Nothing}=nothing) where T <: Real
@@ -110,78 +136,75 @@ end
 # end
 
 
-#= Batch version of dpmeans.
-    Nonparametric-like asymptotic σ->0 version of k-means with DP prior on k.
-    Loosely based / adapted from code originally written by Vadim Smolyakov.
-    https://github.com/vsmolyakov.
-    BATCH VERSION:
-    This actually works fairly poorly in general. A great counter example of why
-    one shouldn't do this is to imagine a dataset with a spherical distribution,
-    and initialising the first mean in the center. All points with distance λ from
-    the center will be moved to a new cluster, but the new cluster will also have
-    its mean.... at the center (or very close). Thus the routine will keep adding
-    new means without reducing the objective.
-=#
-function dpmeans_fit_batch(X::Array{T, 2}; k_init::Int64=3, max_iter::Int64=100) where T <: Number
-
-    #init params
-    k = k_init
-    n, d = size(X)
-
-    mu = mean(X, dims=1)
-    # display(mu)
-    # throw("Need to set lambda intelligently otherwise will continually add clusters.")
-    λ = 3
-    # mu, λ = kpp_init(X, k)
-
-    # println("lambda: ", λ)
-
-    obj = zeros(max_iter)
-    em_time = zeros(max_iter)
-
-    obj_tol = 1e-3
-    n, d = size(X)
-
-    for iter = 1:max_iter
-        dist = zeros(n, k)
-
-        #assignment step
-        # custom functions are > order of magnitude faster
-        dist = dist_to_centers(X, mu; sq=true)
-        dmin, z = row_mins(dist)
-
-        #find(dist->dist==0, dist)
-        bad_idx = findall(dmin .> λ)
-        if length(bad_idx) > 0
-            k += 1
-            z[bad_idx] .= k
-            new_mean = mean(view(X, bad_idx, :), dims=1)
-            mu = vcat(mu, new_mean)
-            Xm = X .- new_mean
-            dist = hcat(dist, sum(Xm.*Xm, dims=2))
-        end
-
-        #update step
-        k_inds, ks = groupinds(z)
-        for j = 1:length(ks)
-            @views mu[ks[j],:] = mean(X[k_inds[j], :], dims=1)
-            @views obj[iter] += sum(dist[k_inds[j], ks[j]])
-        end
-        obj[iter] = obj[iter] + λ * k
-
-        #check convergence
-        if (iter > 1 && abs(obj[iter] - obj[iter-1]) < obj_tol * obj[iter])
-            println("converged in ", iter, " iterations.")
-            global Z = z
-            break
-        elseif iter == max_iter
-            @warn "DPmeans not converged"
-            global Z = z
-        end
-    end
-
-    return Z, mu, obj
-end
+# #= Batch version of dpmeans.
+#     Nonparametric-like asymptotic σ->0 version of k-means with DP prior on k.
+#     Loosely based / adapted from code originally written by Vadim Smolyakov.
+#     https://github.com/vsmolyakov.
+#     BATCH VERSION:
+#     This actually works fairly poorly in general. A great counter example of why
+#     one shouldn't do this is to imagine a dataset with a spherical distribution,
+#     and initialising the first mean in the center. All points with distance λ from
+#     the center will be moved to a new cluster, but the new cluster will also have
+#     its mean.... at the center (or very close). Thus the routine will keep adding
+#     new means without reducing the objective.
+# =#
+# function dpmeans_fit_batch(X::Array{T, 2}; k_init::Int64=3, max_iter::Int64=100) where T <: Number
+#
+#     #init params
+#     k = k_init
+#     n, d = size(X)
+#
+#     mu = mean(X, dims=1)
+#     # display(mu)
+#     # throw("Need to set lambda intelligently otherwise will continually add clusters.")
+#     λ = 3
+#     # mu, λ = kpp_init(X, k)
+#
+#     # println("lambda: ", λ)
+#
+#     obj = zeros(max_iter)
+#     obj_tol = 1e-3
+#
+#     for iter = 1:max_iter
+#         dist = zeros(n, k)
+#
+#         #assignment step
+#         # custom functions are > order of magnitude faster
+#         dist = dist_to_centers(X, mu; sq=true)
+#         dmin, z = row_mins(dist)
+#
+#         #find(dist->dist==0, dist)
+#         bad_idx = findall(dmin .> λ)
+#         if length(bad_idx) > 0
+#             k += 1
+#             z[bad_idx] .= k
+#             new_mean = mean(view(X, bad_idx, :), dims=1)
+#             mu = vcat(mu, new_mean)
+#             Xm = X .- new_mean
+#             dist = hcat(dist, sum(Xm.*Xm, dims=2))
+#         end
+#
+#         #update step
+#         k_inds, ks = groupinds(z)
+#         for j = 1:length(ks)
+#             @views mu[ks[j],:] = mean(X[k_inds[j], :], dims=1)
+#             @views obj[iter] += sum(dist[k_inds[j], ks[j]])
+#         end
+#         obj[iter] = obj[iter] + λ * k
+#
+#         #check convergence
+#         if (iter > 1 && abs(obj[iter] - obj[iter-1]) < obj_tol * obj[iter])
+#             println("converged in ", iter, " iterations.")
+#             global Z = z
+#             break
+#         elseif iter == max_iter
+#             @warn "DPmeans not converged"
+#             global Z = z
+#         end
+#     end
+#
+#     return Z, mu, obj
+# end
 
 
 #= Gibbs version of dpmeans.
@@ -191,8 +214,11 @@ end
     Also there is a `collapse_thrsh` threshold which can remove small clusters
     if desired. I found these could be quite reasonable, and quite common, but
     annoying.
+
+    > Expecting tall matrix: n * d. This is orders of magnitude slower than the
+    default (wide) version for large matrices: it is not advised.
 =#
-function dpmeans_fit(X::Matrix{T}; max_iter::Int=100, shuffleX::Bool=true,
+function dpmeans_fit_tall(X::Matrix{T}; max_iter::Int=100, shuffleX::Bool=true,
                      lambda::T=1., collapse_thrsh::Int=0) where T <: Number
 
     #init params
@@ -216,7 +242,6 @@ function dpmeans_fit(X::Matrix{T}; max_iter::Int=100, shuffleX::Bool=true,
     nks = zeros(Int32, max_iter)
 
     obj_tol = 1e-3
-    n, d = size(X)
     Z = Vector{Int}(undef, n)
 
     x_norm² = sum(X .* X, dims=2) |> _x -> dropdims(_x, dims=2)
@@ -279,9 +304,107 @@ function dpmeans_fit(X::Matrix{T}; max_iter::Int=100, shuffleX::Bool=true,
             nks[end] -= sum(bad_ks_bool)
             # not re-calculating obj because... who cares?
         end
+    end
     return return_order(Z), mu, obj, nks
 end
 
 
+#= Gibbs version of dpmeans.
+    Nonparametric-like asymptotic σ->0 version of k-means with DP prior on k.
+    This version actually works, unlike the batch version! Recommend that the
+    `shuffleX` option is used, as the algo is very sensitive to data order.
+    Also there is a `collapse_thrsh` threshold which can remove small clusters
+    if desired. I found these could be quite reasonable, and quite common, but
+    annoying.
+=#
+function dpmeans_fit(X::Matrix{T}; max_iter::Int=100, shuffleX::Bool=true,
+                     lambda::T=1., collapse_thrsh::Int=0) where T <: Number
+
+    #init params
+    k = 1
+    d, n = size(X)
+    @assert (n > d) "matrix must be arranged to be in wide format: d * n; found: tall format."
+
+    # shuffling (and reordering for end)
+    if shuffleX
+        new_order = randperm(n)
+        X = X[:, new_order]
+        return_order(y::Vector) = y[sortperm(new_order)]
+    else
+        return_order = identity
+    end
+
+    mu = mean(X, dims=2)
+    λ = lambda
+
+    obj = zeros(max_iter)
+    nks = zeros(Int32, max_iter)
+
+    obj_tol = 1e-3
+    Z = Vector{Int}(undef, n)
+
+    x_norm² = sum(X .* X, dims=1) |> _x -> dropdims(_x, dims=1)
+
+    for iter = 1:max_iter
+
+        # @timeit to "munorm" mu_norm² = sum(mu .* mu, dims=2)
+        mu_terms = -2.0*mu'*X .+ sum(mu .* mu, dims=1)'
+        c_mu_term_min, c_z = col_mins(mu_terms)
+
+        for nn = 1:n
+            dist = x_norm²[nn] + c_mu_term_min[nn]
+            need_new_cls = dist > λ
+            if need_new_cls
+                k += 1
+                # append new mean to mu
+                mu = hcat(mu, X[:, nn])
+                addl_mu_terms = -2.0*X[:, nn]' * X[:, nn:end] .+ sum(X[:, nn] .* X[:, nn]) |> _x -> dropdims(_x, dims=1)
+                # update c_min / c_z
+                c_mu_term_min[nn:end], c_z[nn:end] = pwise_mins(c_mu_term_min[nn:end], addl_mu_terms,
+                                                                Int32(k), c_z[nn:end])
+                dist = 0.
+            end
+            Z[nn] = c_z[nn]
+            obj[iter] += dist
+        end
+
+        obj[iter] = obj[iter] + λ * k
+
+        # update means
+        k_inds, ks = groupinds(Z)
+        for j = 1:length(ks)
+            @views mu[:, ks[j]] = mean(X[:, k_inds[j]], dims=2)
+        end
+        nks[iter] = length(ks)
+
+        #check convergence
+        if (iter > 1 && abs(obj[iter] - obj[iter-1]) < obj_tol * obj[iter])
+            # println("converged in ", iter, " iterations.")
+            obj = obj[1:iter]
+            nks = nks[1:iter]
+            break
+        elseif iter == max_iter
+            @warn "DPmeans not converged"
+        end
+    end
+
+    # collapse tiny clusters
+    if collapse_thrsh > 0
+        k_inds, ks = groupinds(Z)
+        bad_ks_bool = map(length, k_inds) .< collapse_thrsh
+        n_bad_k = sum(bad_ks_bool)
+        if n_bad_k > 0
+            bad_ixs = reduce(vcat, k_inds[findall(bad_ks_bool)])
+            mu = mu[.!bad_ks_bool, :]
+
+            dist = dist_to_centers(X[:,bad_ixs]', mu'; sq=true)
+            _dmin, z = row_mins(dist)
+            Z[bad_ixs] .= z
+            nks[end] -= sum(bad_ks_bool)
+            # not re-calculating obj because... who cares?
+        end
+    end
+    return return_order(Z), mu, obj, nks
+end
 
 end  # module
