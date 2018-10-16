@@ -6,9 +6,10 @@ macro noopwhen(condition, expression)
     end |> esc
 end
 
-function countmap(x::Vector{T}; d::Int=-1) where T <: Real
-    # approx. 10x faster than StatsBase for small arrays.
-    d = d > 0 ? d : length(unique(x))
+function countmap(x::Vector{T}; d::Int=-1) where T <: Signed
+    # approx. 10x faster than StatsBase for small arrays of ints.
+    # Note that it always enumerates each possible integer up to max.
+    d = d > 0 ? d : maximum(x)
     out = zeros(Int64, d)
     for cx in x
         out[cx] += 1
