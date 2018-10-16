@@ -186,14 +186,17 @@ end
 
 #= Gibbs version of dpmeans.
     Nonparametric-like asymptotic σ->0 version of k-means with DP prior on k.
-    Loosely based / adapted from code originally written by Vadim Smolyakov.
-    https://github.com/vsmolyakov.
+    This version actually works, unlike the batch version! Recommend that the
+    `shuffleX` option is used, as the algo is very sensitive to data order.
+    Also there is a `collapse_thrsh` threshold which can remove small clusters
+    if desired. I found these could be quite reasonable, and quite common, but
+    annoying.
 =#
-function dpmeans_fit(X::Matrix{T}; k_init::Int=3, max_iter::Int=100,
-                     shuffleX::Bool=true, lambda::T=1., collapse_thrsh::Int=0) where T <: Number
+function dpmeans_fit(X::Matrix{T}; max_iter::Int=100, shuffleX::Bool=true,
+                     lambda::T=1., collapse_thrsh::Int=0) where T <: Number
 
     #init params
-    k = k_init
+    k = 1
     n, d = size(X)
 
     # shuffling (and reordering for end)
