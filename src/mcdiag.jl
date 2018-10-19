@@ -2,7 +2,8 @@ module MCDiagnostic
 using LinearAlgebra
 using DSP: conv
 using StatsBase: autocor
-
+using Statistics: var, mean, cov
+using Distributions: FDist, quantile
 
  #=================================================================================
                                 IS/SMC Diagnostics
@@ -56,7 +57,7 @@ end
 function mcmc_effective_size_asymp(x::Array{T,1}) where T <: Real
     # see e.g. BDA3 (sec 11.5) or Thompson 2010: A comparison of ... autocorrelation time.
     n = length(x)
-    maxlag = min(n, Int64(ceil(30*log10(length(x)))))  # heuristic max
+    maxlag = min(n-5, Int64(ceil(30*log10(length(x)))))  # heuristic max
     ρ = autocor(x, 1:maxlag)
     
     # Geyer, 1992: sums of consecutive ACF values are > 0.

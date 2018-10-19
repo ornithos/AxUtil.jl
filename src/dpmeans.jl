@@ -1,7 +1,7 @@
 module dpmeans
 using Distributions, Random
 
-dropdim1(x) = dropdims(x, dims=1)   # useful for pipes
+dropdim1(x) = dropdims(x, dims=1)
 #= groupinds(x)
   for x isa Vector{Signed}.
   Extract the group of indices which match each unique value in x.
@@ -236,11 +236,12 @@ end
     default (wide) version for large matrices: it is not advised.
 =#
 function dpmeans_fit_tall(X::Matrix{T}; max_iter::Int=100, shuffleX::Bool=true,
-                     lambda::T=1., collapse_thrsh::Int=0) where T <: Number
+                     lambda::T=1., collapse_thrsh::Int=0, suppress_warn=false) where T <: Number
 
     #init params
     k = 1
     n, d = size(X)
+    @assert (n > d) "matrix must be arranged to be in tall format: n * d; found: tall format."
 
     # shuffling (and reordering for end)
     if shuffleX
@@ -302,7 +303,7 @@ function dpmeans_fit_tall(X::Matrix{T}; max_iter::Int=100, shuffleX::Bool=true,
             nks = nks[1:iter]
             break
         elseif iter == max_iter
-            @warn "DPmeans not converged"
+            !suppress_warn && @warn "DPmeans not converged"
         end
     end
 
@@ -335,7 +336,7 @@ end
     annoying.
 =#
 function dpmeans_fit(X::Matrix{T}; max_iter::Int=100, shuffleX::Bool=true,
-                     lambda::T=1., collapse_thrsh::Int=0) where T <: Number
+                     lambda::T=1., collapse_thrsh::Int=0, suppress_warn=false) where T <: Number
 
     #init params
     k = 1
@@ -401,7 +402,7 @@ function dpmeans_fit(X::Matrix{T}; max_iter::Int=100, shuffleX::Bool=true,
             nks = nks[1:iter]
             break
         elseif iter == max_iter
-            @warn "DPmeans not converged"
+            !suppress_warn && @warn "DPmeans not converged"
         end
     end
 

@@ -1,7 +1,7 @@
 module Random
 
 using Distributions
-
+using LinearAlgebra
 
  #=================================================================================
                         Multinomial *Index* Sampling.
@@ -105,4 +105,16 @@ function multinomial_indices_binsearch(n::Int, p::Vector{T}) where T <: Abstract
     return x
 end
 
+#=================================================================================
+                                Misc stuff
+ ==================================================================================#
+
+function psd_matrix(d; ϵ=0.)
+    A = randn(d, d)
+    U = eigvecs((A + A')/2) # (Don't really have to divide by 2)
+    P = U*diagm(0=>abs.(randn(d)) .+ ϵ)*U';
+    return (P + P')/2
 end
+
+
+end  # module

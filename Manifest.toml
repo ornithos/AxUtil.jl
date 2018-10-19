@@ -18,9 +18,9 @@ version = "0.3.1"
 
 [[Arpack]]
 deps = ["BinaryProvider", "Libdl", "LinearAlgebra", "Random", "SparseArrays", "Test"]
-git-tree-sha1 = "5b046410fb617d9cf2f8bc0edd5da05a2e5a2ad4"
+git-tree-sha1 = "1ce1ce9984683f0b6a587d5bdbc688ecb480096f"
 uuid = "7d9fca2a-8960-54d3-9f78-7d1dccf2cb97"
-version = "0.2.3"
+version = "0.3.0"
 
 [[Base64]]
 uuid = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
@@ -133,6 +133,12 @@ git-tree-sha1 = "b9fc47f3eeb8062c9dac3a74bca9fd83f7e0fbf5"
 uuid = "587475ba-b771-5e3f-ad9e-33799f191a9c"
 version = "0.6.7"
 
+[[Formatting]]
+deps = ["Compat"]
+git-tree-sha1 = "6b5c29ec39a54fa823beb31f836431969e83fb74"
+uuid = "59287772-0a20-5a39-b81b-1366585eb4c0"
+version = "0.3.4"
+
 [[ForwardDiff]]
 deps = ["CommonSubexpressions", "DiffResults", "DiffRules", "InteractiveUtils", "LinearAlgebra", "NaNMath", "Pkg", "Random", "SparseArrays", "SpecialFunctions", "StaticArrays", "Test"]
 git-tree-sha1 = "8425a7d4e060bc2ded32d090bce910a187d6cce7"
@@ -154,6 +160,12 @@ deps = ["Base64", "Logging", "Media", "Profile", "Test"]
 git-tree-sha1 = "3c29a199713e7ec62cfdc11f44d7760219d5f658"
 uuid = "e5e0dc1b-0480-54bc-9374-aad01c23163d"
 version = "0.5.3"
+
+[[LaTeXStrings]]
+deps = ["Compat"]
+git-tree-sha1 = "7ab9b8788cfab2bdde22adf9004bda7ad9954b6c"
+uuid = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
+version = "1.0.3"
 
 [[LibGit2]]
 uuid = "76f85450-5226-5b5a-8eaa-529ad045b433"
@@ -234,6 +246,18 @@ uuid = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 [[Profile]]
 deps = ["Printf"]
 uuid = "9abbd945-dff8-562f-b5e8-e1ebf5ef1b79"
+
+[[PyCall]]
+deps = ["Compat", "Conda", "MacroTools", "Statistics", "VersionParsing"]
+git-tree-sha1 = "ce4681263f41d98b3faf6107b28284bf8b866f5f"
+uuid = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0"
+version = "1.18.5"
+
+[[PyPlot]]
+deps = ["Colors", "Compat", "LaTeXStrings", "PyCall", "VersionParsing"]
+git-tree-sha1 = "777c48006c57c8bd322d2032267085983a5fd50f"
+uuid = "d330b81b-6aea-500a-939a-2ce795aea3ee"
+version = "2.6.3"
 
 [[QuadGK]]
 deps = ["DataStructures", "LinearAlgebra", "Test"]
