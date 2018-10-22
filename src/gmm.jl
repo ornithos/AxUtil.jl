@@ -42,7 +42,7 @@ function log_gauss_llh(X, mu, sigma; bypass=false)
         #     out = - ones(size(X, 1))*Inf
         # end
     else
-        out = - ones(size(X, 1))*Inf
+        out = - ones(size(X, 2))*Inf
     end
     return out
 end
