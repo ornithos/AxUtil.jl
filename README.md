@@ -14,4 +14,4 @@ This is very much a WIP, and usually includes things that are specific to whatev
 * `MCMC`: Currently just an implementation of (Truncated) Metropolis Adjusted Langevin Algorithm (T-MALA).
 * `Misc`: Misc functions I miss from python/MATLAB, a faster version of `countmap` for `Int`s, and `repelem`-like behaviour for `repeat`.
 * `Plot`: A few useful plotting utilities, including pairplot, axis operations and image tiling.
-* `Random`: Mostly implementations of Multinomial sampling that are currently unavailable in Distributions.jl. [**Update**: I've subsequently noticed this is just called `Categorical` in `Distributions.jl`, however the linear scan version in particular appears to be substantially faster still than their version.
+* `Random`: Mostly implementations of Multinomial sampling that are currently unavailable in Distributions.jl. [**Update**: *I've subsequently noticed this is just called `Categorical` in `Distributions.jl`, however the linear scan version in particular appears to be substantially faster still than their version.*]

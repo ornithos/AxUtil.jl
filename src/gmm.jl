@@ -116,6 +116,7 @@ function rmcomponents(d::GMM, ixs::Vector{T}) where T <: Signed
 end
 rmcomponents(d::GMM, ixs::Vector{T}) where T <: Bool = rmcomponents(d, convert(BitArray, ixs))
 rmcomponents(d::GMM, ixs::BitArray{1}) = GMM{partype(d)}(d.mus[.!ixs, :], d.sigmas[:, :, .!ixs], d.pis[.!ixs])
+update(d::GMM; mus=nothing, sigmas=nothing, pis=nothing) = GMM(something(mus, d.mus), something(sigmas, d.sigmas), something(pis, d.pis))
 
 function logpdf(d::GMM, X::Matrix{T}; thrsh_comp=0.005) where T <: AbstractFloat
     return gmm_llh(X, d.pis, d.mus, d.sigmas; thrsh_comp=thrsh_comp)
@@ -243,6 +244,7 @@ function gmm_fit(X, weights, pi_prior, mu_prior, cov_prior; max_iter=100, tol=1e
     if rm_inactive
         out = rmcomponents(out, inactive_ixs)
     end
+
     return out
 end
 

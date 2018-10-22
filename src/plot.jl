@@ -1,6 +1,7 @@
 module Plot
 
 using PyPlot
+using LinearAlgebra
 using Flux: Tracker
 
 
@@ -23,7 +24,7 @@ function gaussian_2D_level_curve_pts(mu::Array{Float64,1}, sigma::Array{Float64,
 
     sd = sqrt.(S)
     coods = range(0, stop=2*pi, length=ncoods)
-    coods = hstack((sd[1] * cos.(coods), sd[2] * sin.(coods)))' * alpha
+    coods = hcat(sd[1] * cos.(coods), sd[2] * sin.(coods))' * alpha
     
     coods = (V' * coods)' # project onto basis of ellipse
     coods = coods .+ mu' # add mean
@@ -42,7 +43,11 @@ function pairplot(X::AbstractArray{T, 2}; figsize=(10,10), alpha=0.5, bins=50) w
     fig, axs = PyPlot.subplots(d, d, figsize=figsize)
     for ix = 1:d, iy = 1:d
         if ix != iy
-            axs[ix, iy][:scatter](X[:, ix], X[:, iy], alpha=alpha)
+            if alpha isa Number
+                axs[ix, iy][:scatter](X[:, ix], X[:, iy], alpha=alpha)
+            elseif alpha isa AbstractArray
+                scatter_alpha(X[:,ix], X[:,iy], alpha, ax=axs[ix,iy])
+            end
         else
             axs[ix, iy][:hist](X[:, ix], bins=bins)
         end
@@ -63,6 +68,17 @@ function scatter_arrays(xs...)
             ax[:scatter](unpack_arr(x)...)
         end
     end
+end
+
+
+function scatter_alpha(x1::Vector{T}, x2::Vector{T}, alpha::Vector{T2}; cmap_ix::Int=0, cmap::String="tab10", 
+        rescale_alpha::Bool=true, ax=nothing) where T <: Real where T2 <: AbstractFloat
+    n = length(alpha)
+    ax = something(ax, gca())
+    cols = repeat(collect(ColorMap(cmap)(cmap_ix))', n, 1)
+    rescale_alpha ? (alpha /= maximum(alpha)) : nothing
+    cols[:,4] = alpha
+    ax[:scatter](x1, x2, color=cols)
 end
 
  #=================================================================================
