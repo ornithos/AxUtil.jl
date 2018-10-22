@@ -1,0 +1,36 @@
+%YAML 1.2
+---
+# See http://www.sublimetext.com/docs/3/syntax.html
+name: TimeStampLog
+file_extensions:
+  - log
+scope: source.example-c
+contexts:
+  main:
+    # Strings begin and end with quotes, and use backslashes as an escape
+    # character
+    - match: '(?<=└) '
+      push: environment_descr
+    - match: '\b(Warning|Info|Error)\b'
+      push: loglevelFixed
+    - match: 'LogLevel\b'
+      push: loglevel
+
+  environment_descr:
+    - meta_scope: comment.c
+    - match: "\\["
+      pop: true
+
+  loglevelFixed:
+      - meta_scope: keyword.control.c
+      - match: ']'
+        pop: true
+      - match: '$'
+        pop: true
+
+  loglevel:
+      - meta_scope: string.quoted.double.c
+      - match: ']'
+        pop: true
+      - match: '$'
+        pop: true
