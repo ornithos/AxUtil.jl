@@ -11,14 +11,14 @@ contexts:
     # character
     - match: '(?<=└) '
       push: environment_descr
-    - match: '\b(Warning|Info|Error)\b'
+    - match: '\[(Warning|Info|Error)\b'
       push: loglevelFixed
-    - match: 'LogLevel\b'
+    - match: '\[LogLevel'
       push: loglevel
 
   environment_descr:
     - meta_scope: comment.c
-    - match: "\\["
+    - match: "(?=\\[)"
       pop: true
 
   loglevelFixed:
