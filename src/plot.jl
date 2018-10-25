@@ -25,7 +25,7 @@ function gaussian_2D_level_curve_pts(mu::Array{Float64,1}, sigma::Array{Float64,
     sd = sqrt.(S)
     coods = range(0, stop=2*pi, length=ncoods)
     coods = hcat(sd[1] * cos.(coods), sd[2] * sin.(coods))' * alpha
-    
+
     coods = (V' * coods)' # project onto basis of ellipse
     coods = coods .+ mu' # add mean
     return coods
@@ -44,9 +44,9 @@ function pairplot(X::AbstractArray{T, 2}; figsize=(10,10), alpha=0.5, bins=50) w
     for ix = 1:d, iy = 1:d
         if ix != iy
             if alpha isa Number
-                axs[ix, iy][:scatter](X[:, ix], X[:, iy], alpha=alpha)
+                axs[ix, iy][:scatter](X[:, iy], X[:, ix], alpha=alpha)
             elseif alpha isa AbstractArray
-                scatter_alpha(X[:,ix], X[:,iy], alpha, ax=axs[ix,iy])
+                scatter_alpha(X[:,iy], X[:,ix], alpha, ax=axs[ix,iy])
             end
         else
             axs[ix, iy][:hist](X[:, ix], bins=bins)
@@ -71,7 +71,7 @@ function scatter_arrays(xs...)
 end
 
 
-function scatter_alpha(x1::Vector{T}, x2::Vector{T}, alpha::Vector{T2}; cmap_ix::Int=0, cmap::String="tab10", 
+function scatter_alpha(x1::Vector{T}, x2::Vector{T}, alpha::Vector{T2}; cmap_ix::Int=0, cmap::String="tab10",
         rescale_alpha::Bool=true, ax=nothing) where T <: Real where T2 <: AbstractFloat
     n = length(alpha)
     ax = something(ax, gca())
@@ -113,16 +113,16 @@ end
 
 
 function _tile_image_grid(Ms; gridsz=nothing)
-    
+
     num = length(Ms)
     # primarily to catch user fails of passing in a single array
     @assert num <= 256 "too many images. Expecting at most 256."
     @assert ndims(Ms[1]) == 2 "each element of Ms should be a 2 dimensional image array"
     @assert maximum(size(Ms[1]))*sqrt(float(num)) <= 4000 "resulting image array is too large. Reduce number of Ms."
     @assert length(unique([size(Ms[i]) for i in 1:num])) == 1 "all arrays in Ms should be same size."
-    
+
     Ms_sz = size(Ms[1])
-    
+
     if gridsz == nothing
         poss = [[x,Int(ceil(num/x))] for x in range(1,stop=Int(floor(sqrt(num)))+1)]
         resultsz = [x .* Ms_sz for x in poss]
@@ -132,16 +132,16 @@ function _tile_image_grid(Ms; gridsz=nothing)
         gridsz = collect(gridsz)
     end
     @assert isa(gridsz, Array{Int, 1}) && size(gridsz) == (2,)
-    
+
     gridsz = (gridsz == nothing) ? abutils.subplot_gridsize(num) : gridsz
 
-    
+
     out = zeros((gridsz .* Ms_sz)...)
     for ii in 1:gridsz[1], jj in 1:gridsz[2]
         i = (ii-1) * gridsz[2] + jj
         ix_xs = ((gridsz[1] -ii )*Ms_sz[1] + 1) : ((gridsz[1] - ii +1)*Ms_sz[1])
         ix_ys = ((jj-1)*Ms_sz[2] + 1) : (jj*Ms_sz[2])
-        out[ix_xs, ix_ys] = Ms[i]   
+        out[ix_xs, ix_ys] = Ms[i]
     end
     return copy(out)  # not sure if the copy is necessary. Freq is for PyPlot.
 end
@@ -162,7 +162,7 @@ function plot_2dtile_imshow(forward_network; nsmp_dim=8, scale=2., xrng=nothing,
     xrng != nothing && scale != 2. && @warn "Ignoring scale specification, as rng given."
     xrng = xrng == nothing ? [-scale, scale] : xrng
     yrng = yrng == nothing ? [-scale, scale] : yrng
-    
+
     zs = _gen_grid(xrng, yrng, nsmp_dim=nsmp_dim)
     tr = (transpose == true ? Base.transpose : x -> x)
     ims = [reshape(Tracker.data(forward_network(zs[ii,:])), im_shp) for ii in 1:size(zs,1)]
@@ -190,7 +190,7 @@ function ax_lim_one_side(ax, xy; limstart=nothing, limend=nothing, type="constan
     :param ax           - axis object to manipulate
     :param xy           - either "x", "y", the dimension of the axis to manipulate
     :param limstart     - the argument for changing the start number (nothing = no change)
-    :param limend       - the     "     "     "      "   end    " 
+    :param limend       - the     "     "     "      "   end    "
     :param type         - what to do with the start/end axis: "constant" specifies
                           overriding current value with limstart/limend, "multiply"/"*"
                           and "add"/"+" also accepted which multiply/add curr. number.
@@ -201,7 +201,7 @@ function ax_lim_one_side(ax, xy; limstart=nothing, limend=nothing, type="constan
         lims = ax[:get_ylim]()
     end
     lims = collect(lims)  # make mutable (is tuple typed)
-    
+
     if type == "m" || type == "multiply" || type == "*"
         f = *
     elseif type == "a" || type == "add" || type == "+"
@@ -211,10 +211,10 @@ function ax_lim_one_side(ax, xy; limstart=nothing, limend=nothing, type="constan
     else
         throw("Unexpected limtype (expecting 'constant', 'add', 'multiply')")
     end
-    
+
     if limstart != nothing; lims[1] = f(lims[1], limstart); end
     if limend != nothing; lims[2] = f(lims[2], limend); end
-    
+
     if xy == "x"
         ax[:set_xlim](lims)
     else

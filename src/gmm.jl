@@ -2,14 +2,14 @@ module gmm
 import Flux
 using StatsFuns: logsumexp
 using Distributions
-import Distributions: partype
+import Distributions: partype, logpdf
 using Formatting: format
 using Random: randperm
 using LinearAlgebra: cholesky, logdet
 using NNlib: softmax
 using AxUtil
 
-export GMM, importance_sample
+export GMM, importance_sample, logpdf
 # ==== already exists in Distributions.jl
 # struct MixComp
 #     components::Array{T,1} where T <: MvNormal
@@ -33,6 +33,72 @@ export GMM, importance_sample
 
 # =================> Gaussian stuff, should live elsewhere, but don't know
 # yet how to import stuff from a different module in the same package.
+
+
+# ==> Responsibilities take a while... I was toying with a custom procedure for
+# this, but the below (commented out) is (slightly) (~25%) slower than
+# the current (easy to understand) code in the main body.
+
+# @benchmark softmax(reduce(vcat, map(j -> AxUtil.gmm.log_gauss_llh(S, dGMM.mus[j,:], dGMM.sigmas[:,:,j], bypass=inactive_ixs[j]), 1:15)'))
+# BenchmarkTools.Trial:
+#   memory estimate:  25.60 MiB
+#   allocs estimate:  712
+#   --------------
+#   minimum time:     14.678 ms (0.00% GC)
+#   median time:      18.178 ms (0.00% GC)
+#   mean time:        24.905 ms (19.52% GC)
+#   maximum time:     473.150 ms (90.19% GC)
+#   --------------
+#   samples:          201
+#   evals/sample:     1
+
+# benchmark responsibilities(S, dGMM.mus, dGMM.sigmas, inactive_ixs)
+# BenchmarkTools.Trial:
+#   memory estimate:  29.47 MiB
+#   allocs estimate:  394889
+#   --------------
+#   minimum time:     21.312 ms (0.00% GC)
+#   median time:      23.391 ms (0.00% GC)
+#   mean time:        33.607 ms (24.94% GC)
+#   maximum time:     701.121 ms (95.72% GC)
+#   --------------
+#   samples:          149
+#   evals/sample:     1
+
+# function responsibilities(X::Matrix{T}, mus::Matrix{T}, sigmas::Array{T,3}, inactive_ixs) where T <: AbstractFloat
+#     d, n = size(X)
+#     k = size(mus, 1)
+#     out = Matrix{T}(undef, k, n)
+#     active_ixs = findall(.!inactive_ixs)
+#
+#     invLTs = [Matrix(inv(cholesky(sigmas[:,:,j]).L)) for j in 1:k]  # easier to just do inactive_ixs anyway...
+#     normconsts = [-2*sum(log.(diag(invLT))) for invLT in invLTs]
+#     @threads for i in 1:n
+#         @inbounds begin
+#             _max = -Inf   # not type stable
+#             for j in 1:k
+#                 if inactive_ixs[j]
+#                     out[j, i] = 0. # not type stable; will ignore later
+#                 else
+#                     Δ = X[:, i] - mus[j, :]
+#                     out[j, i] = -0.5 * (sum(x->x^2, invLTs[j] * Δ) + normconsts[j])
+#                     _max = out[j, i] > _max ? out[j, i] : _max
+#                 end
+#             end
+#             _sum = 0. # not type stable
+#             for j in active_ixs
+#                 out[j, i] = exp(out[j, i] - _max)
+#                 _sum += out[j, i]
+#             end
+#             for j in active_ixs
+#                 out[j, i] /= _sum
+#             end
+#         end # inbounds
+#     end # loop over datapoints
+#     return out
+# end
+
+
 function log_gauss_llh(X, mu, sigma; bypass=false)
     if !bypass
         out = _log_gauss_llh(X, mu, sigma)
@@ -163,23 +229,23 @@ function gmm_llh(X, pis, mus, sigmas; disp=false, thrsh_comp=0.005)
 end
 
 
-function gmm_fit(X::Matrix{T}, d::GMM; max_iter=100, tol=1e-3, verbose=true, rm_inactive=false) where T <: AbstractFloat
-    gmm_fit(X, d.pis, d.mus, d.sigmas; max_iter=max_iter, tol=tol, verbose=verbose, rm_inactive=rm_inactive)
+function gmm_fit(X::Matrix{T}, d::GMM; max_iter=100, tol=1e-3, verbose=true, rm_inactive=false, thrsh_comp=0.005) where T <: AbstractFloat
+    gmm_fit(X, d.pis, d.mus, d.sigmas; max_iter=max_iter, tol=tol, verbose=verbose, rm_inactive=rm_inactive, thrsh_comp=thrsh_comp)
 end
 
 
-function gmm_fit(X::Matrix{T}, weights::Vector, d::GMM; max_iter=100, tol=1e-3, verbose=true, rm_inactive=false) where T <: AbstractFloat
-    gmm_fit(X, weights, d.pis, d.mus, d.sigmas; max_iter=max_iter, tol=tol, verbose=verbose, rm_inactive=rm_inactive)
+function gmm_fit(X::Matrix{T}, weights::Vector, d::GMM; max_iter=100, tol=1e-3, verbose=true, rm_inactive=false, thrsh_comp=0.005) where T <: AbstractFloat
+    gmm_fit(X, weights, d.pis, d.mus, d.sigmas; max_iter=max_iter, tol=tol, verbose=verbose, rm_inactive=rm_inactive, thrsh_comp=thrsh_comp)
 end
 
 
-function gmm_fit(X, pi_prior, mu_prior, cov_prior; max_iter=100, tol=1e-3, verbose=true, rm_inactive=false)
+function gmm_fit(X, pi_prior, mu_prior, cov_prior; max_iter=100, tol=1e-3, verbose=true, rm_inactive=false, thrsh_comp=0.005)
     gmm_fit(X, trues(size(X,2)), pi_prior, mu_prior, cov_prior; max_iter=max_iter,
-        tol=tol, verbose=verbose, rm_inactive=rm_inactive)
+        tol=tol, verbose=verbose, rm_inactive=rm_inactive, thrsh_comp=thrsh_comp)
 end
 
 
-function gmm_fit(X, weights, pi_prior, mu_prior, cov_prior; max_iter=100, tol=1e-3, verbose=true, rm_inactive=false)
+function gmm_fit(X, weights, pi_prior, mu_prior, cov_prior; max_iter=100, tol=1e-3, verbose=true, rm_inactive=false, thrsh_comp=0.005)
     p, n = size(X)
     k = length(pi_prior)
     @assert size(weights) == (n,)
@@ -191,7 +257,6 @@ function gmm_fit(X, weights, pi_prior, mu_prior, cov_prior; max_iter=100, tol=1e
 
     weights = weights / mean(weights)    # diff. to Cappé et al. due to prior
 
-    thrsh_comp = 0.005
     inactive_ixs = pi_prior[:] .< thrsh_comp
     pi_prior = copy(pi_prior)
 
@@ -208,7 +273,7 @@ function gmm_fit(X, weights, pi_prior, mu_prior, cov_prior; max_iter=100, tol=1e
         end
         rs = softmax(rs)
 
-        @debug format("(gmm) ({:3d}/{:3d}), responsibilities: {:s}", i, max_iter, AxUtil.Arr.arr2str(vec(sum(rs, dims=2))))
+        @debug format("(gmm) ({:3d}/{:3d})", i, max_iter) rs=sum(rs, dims=2)
         # reweight according to importance weights (see Adaptive IS in General Mix. Cappé et al. 2008)
         rs .*= weights'
         @debug format("(gmm) ({:3d}/{:3d}), wgtd responsibilities: {:s}", i, max_iter, AxUtil.Arr.arr2str(vec(sum(rs, dims=2))))
