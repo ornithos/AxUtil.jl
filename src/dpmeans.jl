@@ -1,5 +1,6 @@
 module dpmeans
 using Distributions, Random
+using BSON
 
 dropdim1(x) = dropdims(x, dims=1)
 #= groupinds(x)
@@ -407,10 +408,23 @@ function dpmeans_fit(X::Matrix{T}; max_iter::Int=100, shuffleX::Bool=true,
     end
 
     # collapse tiny clusters
+    bson("dbg/dpmean.bson", Z=Z, mu=mu, X=X)
     if collapse_thrsh > 0
         k_inds, ks = groupinds(Z)
+        if minimum(ks) > 1   # only the first cluster can possibly be unused.
+            mu = mu[:, 2:end]
+            nks[end] -= 1
+        end
+
         bad_ks_bool = map(length, k_inds) .< collapse_thrsh
         n_bad_k = sum(bad_ks_bool)
+        # unlikely case that *all clusters* are too small
+        !suppress_warn && n_bad_k == nks[end] && @warn "reducing collapse_thrsh as no clusters qualify"
+        while n_bad_k == nks[end]
+            collapse_thrsh *= 0.9
+            bad_ks_bool = map(length, k_inds) .< collapse_thrsh
+            n_bad_k = sum(bad_ks_bool)
+        end
         if n_bad_k > 0
             bad_ixs = reduce(vcat, k_inds[findall(bad_ks_bool)])
             mu = mu[:, .!bad_ks_bool]

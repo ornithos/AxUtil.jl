@@ -229,23 +229,29 @@ function gmm_llh(X, pis, mus, sigmas; disp=false, thrsh_comp=0.005)
 end
 
 
-function gmm_fit(X::Matrix{T}, d::GMM; max_iter=100, tol=1e-3, verbose=true, rm_inactive=false, thrsh_comp=0.005) where T <: AbstractFloat
-    gmm_fit(X, d.pis, d.mus, d.sigmas; max_iter=max_iter, tol=tol, verbose=verbose, rm_inactive=rm_inactive, thrsh_comp=thrsh_comp)
+function gmm_fit(X::Matrix{T}, d::GMM; max_iter=100, tol=1e-3, verbose=true, rm_inactive=false,
+                 thrsh_comp=0.005, prior_strength=1.0) where T <: AbstractFloat
+    gmm_fit(X, d.pis, d.mus, d.sigmas; max_iter=max_iter, tol=tol, verbose=verbose,
+           rm_inactive=rm_inactive, thrsh_comp=thrsh_comp, prior_strength=prior_strength)
 end
 
 
-function gmm_fit(X::Matrix{T}, weights::Vector, d::GMM; max_iter=100, tol=1e-3, verbose=true, rm_inactive=false, thrsh_comp=0.005) where T <: AbstractFloat
-    gmm_fit(X, weights, d.pis, d.mus, d.sigmas; max_iter=max_iter, tol=tol, verbose=verbose, rm_inactive=rm_inactive, thrsh_comp=thrsh_comp)
+function gmm_fit(X::Matrix{T}, weights::Vector, d::GMM; max_iter=100, tol=1e-3, verbose=true,
+                rm_inactive=false, thrsh_comp=0.005, prior_strength=1.0) where T <: AbstractFloat
+    gmm_fit(X, weights, d.pis, d.mus, d.sigmas; max_iter=max_iter, tol=tol, verbose=verbose,
+            rm_inactive=rm_inactive, thrsh_comp=thrsh_comp, prior_strength=prior_strength)
 end
 
 
-function gmm_fit(X, pi_prior, mu_prior, cov_prior; max_iter=100, tol=1e-3, verbose=true, rm_inactive=false, thrsh_comp=0.005)
+function gmm_fit(X, pi_prior, mu_prior, cov_prior; max_iter=100, tol=1e-3, verbose=true,
+                 rm_inactive=false, thrsh_comp=0.005, prior_strength=1.0)
     gmm_fit(X, trues(size(X,2)), pi_prior, mu_prior, cov_prior; max_iter=max_iter,
-        tol=tol, verbose=verbose, rm_inactive=rm_inactive, thrsh_comp=thrsh_comp)
+            tol=tol, verbose=verbose, rm_inactive=rm_inactive, thrsh_comp=thrsh_comp, prior_strength=prior_strength)
 end
 
 
-function gmm_fit(X, weights, pi_prior, mu_prior, cov_prior; max_iter=100, tol=1e-3, verbose=true, rm_inactive=false, thrsh_comp=0.005)
+function gmm_fit(X, weights, pi_prior, mu_prior, cov_prior; max_iter=100, tol=1e-3, verbose=true,
+                 rm_inactive=false, thrsh_comp=0.005, prior_strength=1.0)
     p, n = size(X)
     k = length(pi_prior)
     @assert size(weights) == (n,)
@@ -255,7 +261,7 @@ function gmm_fit(X, weights, pi_prior, mu_prior, cov_prior; max_iter=100, tol=1e
     mus = copy(mu_prior)
     sigmas = copy(cov_prior)
 
-    weights = weights / mean(weights)    # diff. to Cappé et al. due to prior
+    weights = weights / (mean(weights) * prior_strength)
 
     inactive_ixs = pi_prior[:] .< thrsh_comp
     pi_prior = copy(pi_prior)
@@ -271,17 +277,17 @@ function gmm_fit(X, weights, pi_prior, mu_prior, cov_prior; max_iter=100, tol=1e
             display(log.(pis))
             rethrow(e)
         end
+        @debug format("(gmm) ({:3d}/{:3d})", i, max_iter) llh=round(sum(log.(sum(pis .* (exp.(rs) .* weights'), dims=1))), digits=2)
         rs = softmax(rs)
 
-        @debug format("(gmm) ({:3d}/{:3d})", i, max_iter) rs=sum(rs, dims=2)
+        @debug format("(gmm) ({:3d}/{:3d}) original responsibilities", i, max_iter) rs=vec(sum(rs, dims=2))
         # reweight according to importance weights (see Adaptive IS in General Mix. Cappé et al. 2008)
         rs .*= weights'
-        @debug format("(gmm) ({:3d}/{:3d}), wgtd responsibilities: {:s}", i, max_iter, AxUtil.Arr.arr2str(vec(sum(rs, dims=2))))
+        @debug format("(gmm) ({:3d}/{:3d}), wgtd responsibilities", i, max_iter) rs=vec(sum(rs, dims=2))
 
         # M-step
         Ns = vec(sum(rs, dims=2))
-        inactive_ixs = Ns .< 1
-        @debug format("(gmm) ({:3d}/{:3d}), n_inactive: {:d}", i, max_iter, sum(inactive_ixs))
+        inactive_ixs = Ns .< thrsh_comp*n
         active_ixs = .! inactive_ixs
         if any(inactive_ixs)
             pis[inactive_ixs] .= 0.0
@@ -289,7 +295,7 @@ function gmm_fit(X, weights, pi_prior, mu_prior, cov_prior; max_iter=100, tol=1e
         end
         pis = Ns + pi_prior[:]
         pis /= sum(pis)
-        @debug format("(gmm) ({:3d}/{:3d}), π: {:s}", i, max_iter, AxUtil.Arr.arr2str(pis))
+        @debug format("(gmm) ({:3d}/{:3d})", i, max_iter) thrsh_comp=thrsh_comp n_inactive=sum(inactive_ixs) pis=pis
         # ==========>  .... SORT OUT X IS NOW p * n
         _mus = reduce(hcat, map(j -> sum(X .* rs[j:j,:], dims=2) .+ pi_prior[j]*mu_prior[j,:], findall(active_ixs)))'
         _mus ./= vec(Ns[active_ixs] + pi_prior[active_ixs])
