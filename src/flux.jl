@@ -1,6 +1,8 @@
 module Flux
 
 using LinearAlgebra
+using StatsFuns: logsumexp
+
 using Flux, Test
 using Flux: Tracker
 using Flux.Tracker: @grad, gradcheck
@@ -55,31 +57,47 @@ gradtest(f, dims...) = gradtest(f, rand.(Float64, dims)...)
 
 # Row-wise logsumexp. See math.jl in AxUtil. Gradient is fairly efficient with below.
 # ===================================
-function logsumexprows(X::AbstractArray{T}) where {T<:Real}
+function logsumexprows(X::Matrix{T}) where {T<:Real}
     #= iterate over rows of matrix with StatsFuns' logsumexp.
        This is primarily useful since we have a Flux-enabled
        version in the flux src in AxUtil.
     =#
     n = size(X,1)
     out = zeros(n)
-    for i = 1:n
+    Threads.@threads for i = 1:n
         out[i] = logsumexp(X[i,:])
     end
     return out
-end   
+end
 
 logsumexprows(X::TrackedArray) = Tracker.track(logsumexprows, X)
 
 @grad function logsumexprows(X)
-  return logsumexprows(X.data), Δ -> (Δ .* NNlib.softmax(X.data' .* Δ')',)
+  return logsumexprows(X.data), Δ -> (Δ .* NNlib.softmax(X.data')',)
 end
 
+
+function logsumexpcols(X::Matrix{T}) where {T<:Real}
+    n = size(X,2)
+    out = zeros(n)
+    Threads.@threads for i = 1:n
+        @views out[i] = logsumexp(X[:,i])
+    end
+    return out
+end
+
+logsumexpcols(X::TrackedArray) = Tracker.track(logsumexpcols, X)
+
+@grad function logsumexpcols(X)
+  return logsumexpcols(X.data), Δ -> (NNlib.softmax(X.data) .* Δ',)
+end
 
 
 if FLUX_TESTS
     @test gradtest((x, A) -> make_lt(log.(x), 5) * A, 10, (5,5))
     @test gradtest((x, A) -> diag0(cos.(x)) * A, 5, (5,5))
     @test gradtest((X) -> sin.(logsumexprows(X .* X)), (6,10))
+    @test gradtest((X) -> sin.(logsumexpcols(X .* X)), (6,10))
 end
 
 end
