@@ -11,8 +11,10 @@ contexts:
     # character
     - match: '(?<=└) '
       push: environment_descr
-    - match: '\[(Warning|Info|Error)\b'
-      push: loglevelFixed
+    - match: '\[(Warning|Error)\b'
+      push: loglevelBadFixed
+    - match: '\[(Info|Debug)\b'
+      push: loglevelOkFixed
     - match: '\[LogLevel'
       push: loglevel
 
@@ -21,7 +23,14 @@ contexts:
     - match: "(?=\\[)"
       pop: true
 
-  loglevelFixed:
+  loglevelOkFixed:
+      - meta_scope: storage.type.c
+      - match: ']'
+        pop: true
+      - match: '$'
+        pop: true
+
+  loglevelBadFixed:
       - meta_scope: keyword.control.c
       - match: ']'
         pop: true
