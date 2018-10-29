@@ -1,5 +1,5 @@
 module gmm
-import Flux
+import Flux, Flux.Tracker
 using StatsFuns: logsumexp
 using Distributions
 import Distributions: partype, logpdf
@@ -8,6 +8,7 @@ using Random: randperm
 using LinearAlgebra: cholesky, logdet
 using NNlib: softmax
 using AxUtil
+using BSON
 
 export GMM, importance_sample, logpdf
 # ==== already exists in Distributions.jl
@@ -181,7 +182,7 @@ function rmcomponents(d::GMM, ixs::Vector{T}) where T <: Signed
     rmcomponents(d, bad_ixs)
 end
 rmcomponents(d::GMM, ixs::Vector{T}) where T <: Bool = rmcomponents(d, convert(BitArray, ixs))
-rmcomponents(d::GMM, ixs::BitArray{1}) = GMM{partype(d)}(d.mus[.!ixs, :], d.sigmas[:, :, .!ixs], d.pis[.!ixs])
+rmcomponents(d::GMM, ixs::BitArray{1}) = GMM{partype(d)}(d.mus[.!ixs, :], d.sigmas[:, :, .!ixs], d.pis[.!ixs]/sum(d.pis[.!ixs]))
 update(d::GMM; mus=nothing, sigmas=nothing, pis=nothing) = GMM(something(mus, d.mus), something(sigmas, d.sigmas), something(pis, d.pis))
 
 function logpdf(d::GMM, X::Matrix{T}; thrsh_comp=0.005) where T <: AbstractFloat
@@ -193,6 +194,16 @@ function importance_sample(d::GMM, n::Int, log_f::Function; shuffle=false)
     logW = log_f(S) - logpdf(d, S);
     return S, logW;
 end
+
+
+function is_eff_ss_per_comp(d::GMM, S::Matrix{T}, W::Vector{T}) where T <: AbstractFloat
+    k = ncomponents(d)
+    out = zeros(T, k)
+    rs = softmax(reduce(vcat, map(j -> log_gauss_llh(S, d.mus[j,:], d.sigmas[:,:,j], 1:k)')))
+    out = map(j->AxUtil.MCDiagnostic.is_eff_ss(W[rand(Categorical(rs[j,:]), length(W))]), 1:k)
+    return out
+end
+
 
 function sample_from_gmm(n, pis, mus, covs; shuffle=true)
     k, p = size(mus)
@@ -261,16 +272,16 @@ function gmm_fit(X, weights, pi_prior, mu_prior, cov_prior; max_iter=100, tol=1e
     mus = copy(mu_prior)
     sigmas = copy(cov_prior)
 
-    weights = weights / (mean(weights) * prior_strength)
+    weights = weights / mean(weights)
 
     inactive_ixs = pi_prior[:] .< thrsh_comp
-    pi_prior = copy(pi_prior)
+    pi_prior = copy(pi_prior) * prior_strength
 
     for i in range(1, stop=max_iter)
         # E-step
         rs = reduce(vcat, map(j -> log_gauss_llh(X, mus[j,:], sigmas[:,:,j], bypass=inactive_ixs[j]), 1:k)')
         try
-            rs .+= log.(pis)[:]
+            rs .+= log.(pis)[:] + log.(pi_prior)[:]
             catch e
             @warn "(gmm) rs and (log) pis are not conformable. The respective values are:"
             display(rs)
@@ -287,7 +298,7 @@ function gmm_fit(X, weights, pi_prior, mu_prior, cov_prior; max_iter=100, tol=1e
 
         # M-step
         Ns = vec(sum(rs, dims=2))
-        inactive_ixs = Ns .< thrsh_comp*n
+        inactive_ixs = Ns .< thrsh_comp*n/prior_strength
         active_ixs = .! inactive_ixs
         if any(inactive_ixs)
             pis[inactive_ixs] .= 0.0
@@ -308,6 +319,7 @@ function gmm_fit(X, weights, pi_prior, mu_prior, cov_prior; max_iter=100, tol=1e
             sigmas[:,:,j] ./= (Ns[j] + pi_prior[j] + p + 2)     # normalizing terms from Wishart prior
             sigmas[:,:,j] = (sigmas[:,:,j] + sigmas[:,:,j]')/2 + AxUtil.Arr.eye(p)*1e-6   # hack: prevent collapse
         end
+        # bson(format("dbg/gmm.bson"), pis=pis, sigmas=sigmas, mus=mus, X=X, weights=weights, active_ixs=active_ixs)
 
     end
 
@@ -319,6 +331,55 @@ function gmm_fit(X, weights, pi_prior, mu_prior, cov_prior; max_iter=100, tol=1e
     return out
 end
 
+
+
+# llh_unnorm(Scentered, Linv) = let white = Linv * Scentered; -0.5*sum(white .* white, dims=1); end
+
+
+# A little like a Gaussian sum approximation for nonlinear dynamical system.
+# (oh.. but.. it is an *inner* variational approximation, not an outer one.
+# In our case this is not *so* terrible since we do not assume the previous GMM
+# is the true posterior as in GS approx., so we do not get catastrophic shrinkage.
+# But we should be a little worried.)
+function optimise_components_bbb(d::GMM, log_f::Function, epochs::Int, batch_size_per_cls::Int)
+    n_d = size(d)
+    k = ncomponents(d)
+    invLTpars = [Flux.param(Matrix(inv(cholesky(d.sigmas[:,:,j]).L))) for j in 1:k]  # note that ∵ inverse, Σ^{-1} = L'L
+    mupars = Flux.param(d.mus)
+    opt = ADAM(Tracker.Params((mupars, invLTpars...)))
+    hist_freq = 5
+    history = zeros(Int(floor(epochs/hist_freq)))
+
+    blkreduction = cat([trues(1,n_d) for i in 1:k]..., dims=[1,2])
+    for ee in 1:epochs
+        normcnst = Tracker.collect([sum(log.(diag(invLTpars[r]))) for r in 1:k]) #.-n_d/2*log(2π)
+        blk_invLT = cat(invLTpars..., dims=[1,2])
+        objective = 0.
+        for j in 1:k
+            x = mupars[j,:] .+ inv(invLTpars[j])*randn(n_d, batch_size_per_cls)
+            objective += -sum(log_f(x))/batch_size_per_cls  # reconstruction
+            log_q_terms_interm = blk_invLT * (repeat(x, outer=[k,1]) .- reshape(mupars', length(mupars)))
+            log_q_terms = -0.5*blkreduction * (log_q_terms_interm .* log_q_terms_interm)
+#             log_q_terms = Tracker.collect(reduce(vcat, [llh_unnorm(x .- mupars[r,:], invLTpars[r]) for r in 1:k]))
+#             @assert isapprox(log_q_terms2, log_q_terms)
+            objective += sum(AxUtil.Flux.logsumexpcols(log_q_terms .+ normcnst))/batch_size_per_cls
+        end
+
+        Tracker.back!(objective)
+        for j in 1:k
+            invLTpars[j].grad[triu!(trues(n_d, n_d), 1)] .= 0.
+        end
+        opt()
+        (ee % 5 == 0) && (history[(ee÷5)] = Tracker.data(objective))
+    end
+    μs = Tracker.data(mupars)
+    Σs = zeros(partype(d), n_d, n_d, k)
+
+    for j in 1:k
+        Σs[:,:,j] = let xd=Tracker.data(invLTpars[j]); s=inv(xd'xd); (s+s')/2; end
+    end
+    return μs, Σs, history
+end
 
 
 end  # module

@@ -55,7 +55,8 @@ gradtest(f, xs::AbstractArray...) = gradcheck((xs...) -> sum(sin.(f(xs...))), xs
 gradtest(f, dims...) = gradtest(f, rand.(Float64, dims)...)
 
 
-
+# For use by logsumexprows/cols. However, using the StatsFuns version with
+# usual Flux broadcasting etc. works faster usually!
 logsumexp(X::TrackedVector) = Tracker.track(logsumexp, X)
 
 @grad function logsumexp(X)
