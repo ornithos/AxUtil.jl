@@ -23,7 +23,7 @@ ar_coeffs(X, max_l) = reduce(hcat, [X[i:end-max_l+i-1] for i in 1:max_l]) \ X[ma
 function spectrum0_ar(x::Array{T,1}; ncoeffs=nothing) where T <: Real
     nrows = length(x)
     ncoeffs = something(ncoeffs, Int64(ceil(10 * log10(nrows)))) # for AR (not doing AIC)
-    
+
     # if column is (almost) perfect line, spectrum is 0
     # (avoids pathologies in AR calculation)
     if isapprox(std(diff(x)), 0.)
@@ -59,16 +59,16 @@ function mcmc_effective_size_asymp(x::Array{T,1}) where T <: Real
     n = length(x)
     maxlag = min(n-5, Int64(ceil(30*log10(length(x)))))  # heuristic max
     ρ = autocor(x, 1:maxlag)
-    
+
     # Geyer, 1992: sums of consecutive ACF values are > 0.
     consec_pairs = conv(ρ, ones(2))
-    ncoeffs = findfirst(consec_pairs .< 0) - 1
+    ncoeffs = something(findfirst(consec_pairs .< 0), length(ρ)+1) - 1
     return  n / (1 + 2*(sum(ρ[1:ncoeffs])))
 end
 
 
 # coda's version of Rhat is really nice. Converted approx. as-is.
-function Rhat(xs...; confidence = 0.95) 
+function Rhat(xs...; confidence = 0.95)
     #=================================================================
     Unlike BDA3, Plummer et al. in R's coda package use an additional
     adjustment for 1/nchains, as well as add some CIs.
@@ -76,7 +76,7 @@ function Rhat(xs...; confidence = 0.95)
     @assert (length(unique(map(length, xs))) == 1) "inconsistent lengths in xs"
     x = reduce(hcat, xs)
     n, nchains = size(x)
-    
+
     #=================================================================
     Estimate mean within-chain variance (W) and between-chain variance
     (B/Niter), and calculate sampling variances and covariance of the
@@ -89,16 +89,16 @@ function Rhat(xs...; confidence = 0.95)
     b  = n * var(x̄)
 
     muhat  = mean(x̄)
-    var_w  = var(s2)/nchains              
-    var_b  = (2 * b^2)/(nchains - 1)      
+    var_w  = var(s2)/nchains
+    var_b  = (2 * b^2)/(nchains - 1)
     cov_wb = (n/nchains) * cov(s2[:], x̄[:].^2) - 2 * muhat * cov(s2[:], x̄[:])
 
-    #=================================================================  
+    #=================================================================
     Posterior interval combines all uncertainties in a t interval with
     center muhat, scale sqrt(V), and df_V degrees of freedom.
     =================================================================#
     V     = (n-1)w / n  + (1 + 1/nchains)b / n
-    var_V = (var_w * (n-1)^2 + 
+    var_V = (var_w * (n-1)^2 +
            (1 + 1/nchains)^2 * var_b + 2 * (n-1) * (1 + 1/nchains) * cov_wb
           )/n^2
     df_V = 2V^2 / var_V

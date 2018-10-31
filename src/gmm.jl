@@ -1,11 +1,12 @@
 module gmm
-import Flux, Flux.Tracker
+using Flux, Flux.Tracker
+using Flux: ADAM
 using StatsFuns: logsumexp
 using Distributions
 import Distributions: partype, logpdf
 using Formatting: format
 using Random: randperm
-using LinearAlgebra: cholesky, logdet
+using LinearAlgebra  #: cholesky, logdet, diag, inv, triu
 using NNlib: softmax
 using AxUtil
 using BSON
@@ -298,7 +299,7 @@ function gmm_fit(X, weights, pi_prior, mu_prior, cov_prior; max_iter=100, tol=1e
 
         # M-step
         Ns = vec(sum(rs, dims=2))
-        inactive_ixs = Ns .< thrsh_comp*n/prior_strength
+        inactive_ixs = Ns .< thrsh_comp
         active_ixs = .! inactive_ixs
         if any(inactive_ixs)
             pis[inactive_ixs] .= 0.0
@@ -341,22 +342,50 @@ end
 # In our case this is not *so* terrible since we do not assume the previous GMM
 # is the true posterior as in GS approx., so we do not get catastrophic shrinkage.
 # But we should be a little worried.)
-function optimise_components_bbb(d::GMM, log_f::Function, epochs::Int, batch_size_per_cls::Int)
+@inline function build_mat(x_lt, x_diag, d::Int)
+    AxUtil.Flux.make_lt_strict(x_lt, d) + AxUtil.Flux.diag0(exp.(x_diag))
+end
+
+function optimise_components_bbb(d::GMM, log_f::Function, epochs::Int, batch_size_per_cls::Int; converge_thrsh::AbstractFloat=0.999, lr::AbstractFloat=1e-3)
+    success = 0
+    nanfail = 0   # permit up to 3 in a row failures due to NaN (as this is probably from blow-up.)
+    while success < 1
+        @debug format("(bbb) LEARNING RATE: {:.3e}", lr)
+        d, success = _optimise_components_bbb(d, log_f, epochs, batch_size_per_cls; converge_thrsh=converge_thrsh, lr=lr, exitifnan=(nanfail<3))
+        lr *= 0.8
+        nanfail = (success < 0) * (nanfail - success)   # increment if success = -1, o.w. reset
+    end
+    return d
+end
+
+function _optimise_components_bbb(d::GMM, log_f::Function, epochs::Int, batch_size_per_cls::Int;
+        converge_thrsh::AbstractFloat=0.999, lr::AbstractFloat=1e-3, exitifnan::Bool=false)
+    # @debug "(bbb) Input GMM: " dGMM=d
+    # (ncomponents(d) > 8) && @debug "(bbb) Input GMM: " dGMM=rmcomponents(d, collect(1:8))
+    # (ncomponents(d) > 16) && @debug "(bbb) Input GMM: " dGMM=rmcomponents(d, collect(1:16))
     n_d = size(d)
     k = ncomponents(d)
-    invLTpars = [Flux.param(Matrix(inv(cholesky(d.sigmas[:,:,j]).L))) for j in 1:k]  # note that ∵ inverse, Σ^{-1} = L'L
+    invLTpars = [Matrix(inv(cholesky(d.sigmas[:,:,j]).L)) for j in 1:k]  # note that ∵ inverse, Σ^{-1} = L'L
+    invDiagPars = [Flux.param(log.(x[diagind(x)])) for x in invLTpars]
+    invLTpars = [Flux.param(x[tril!(trues(n_d, n_d), -1)]) for x in invLTpars]
+
     mupars = Flux.param(d.mus)
-    opt = ADAM(Tracker.Params((mupars, invLTpars...)))
-    hist_freq = 5
+    opt = ADAM(Tracker.Params((mupars, invLTpars..., invDiagPars...)), lr)
+    hist_freq = 5   # Sampling freq for history of objective
+    s_wdw = 50      # Smoothing window for history for convergence (i.e. s_wdw * hist_freq)
     history = zeros(Int(floor(epochs/hist_freq)))
+    s_hist = zeros(Int(floor(epochs/hist_freq)))
 
     blkreduction = cat([trues(1,n_d) for i in 1:k]..., dims=[1,2])
     for ee in 1:epochs
-        normcnst = Tracker.collect([sum(log.(diag(invLTpars[r]))) for r in 1:k]) #.-n_d/2*log(2π)
-        blk_invLT = cat(invLTpars..., dims=[1,2])
+        normcnst = Tracker.collect([sum(invDiagPars[r]) for r in 1:k]) #.-n_d/2*log(2π)
+        invLT = [build_mat(x_lt, x_dia, n_d) for (x_lt, x_dia) in zip(invLTpars, invDiagPars)]
+        blk_invLT = cat(invLT..., dims=[1,2])
         objective = 0.
+
+        # Take sample from each component and backprop through (stoch.) KL
         for j in 1:k
-            x = mupars[j,:] .+ inv(invLTpars[j])*randn(n_d, batch_size_per_cls)
+            x = mupars[j,:] .+ inv(invLT[j])*randn(n_d, batch_size_per_cls)
             objective += -sum(log_f(x))/batch_size_per_cls  # reconstruction
             log_q_terms_interm = blk_invLT * (repeat(x, outer=[k,1]) .- reshape(mupars', length(mupars)))
             log_q_terms = -0.5*blkreduction * (log_q_terms_interm .* log_q_terms_interm)
@@ -365,20 +394,74 @@ function optimise_components_bbb(d::GMM, log_f::Function, epochs::Int, batch_siz
             objective += sum(AxUtil.Flux.logsumexpcols(log_q_terms .+ normcnst))/batch_size_per_cls
         end
 
-        Tracker.back!(objective)
-        for j in 1:k
-            invLTpars[j].grad[triu!(trues(n_d, n_d), 1)] .= 0.
+        if isnan(objective.data)
+            if exitifnan
+                return d, -1
+            end
+            display(format("ee = {:d}", ee))
+            display(d.mus)
+            display("sigmas originally:")
+            display([d.sigmas[:,:,j] for j in 1:k])
+            display("LT pars:")
+            display(invLTpars)
+            display("normconst:")
+            display(normcnst)
+            for j in 1:k
+                x = mupars[j,:] .+ inv(invLTpars[j])*randn(n_d, batch_size_per_cls)
+                objective += -sum(log_f(x))/batch_size_per_cls  # reconstruction
+                log_q_terms_interm = blk_invLT * (repeat(x, outer=[k,1]) .- reshape(mupars', length(mupars)))
+                log_q_terms = -0.5*blkreduction * (log_q_terms_interm .* log_q_terms_interm)
+                display(format("j = {:d}", j))
+                display(log_q_terms_interm.data)
+                display(log_q_terms.data)
+                display(sum(AxUtil.Flux.logsumexpcols(log_q_terms .+ normcnst)).data/batch_size_per_cls)
+            end
         end
-        opt()
-        (ee % 5 == 0) && (history[(ee÷5)] = Tracker.data(objective))
+
+
+        # Gradient and optimisation
+        Tracker.back!(objective)
+        # #  -- respect constraints (projected GD)
+        # for j in 1:k
+        #     invLTpars[j].grad[triu!(trues(n_d, n_d), 1)] .= 0.  # keep Lower Triangular.
+        # end
+        opt()  # Perform gradient step / zero grad.
+        # diagix = diagind(invLTpars[1])
+        # for j in 1:k
+        #     invLTpars[j].data[diagix] .= max.(invLTpars[j].data[diagix], 1e-6)  # avoid negative / zero diagonal
+        # end
+
+        # Objective and convergence
+        if ee % hist_freq == 0
+            @debug format("(bbb) ({:3d}/{:3d}), objective: {:.3f}", ee, epochs, Tracker.data(objective))
+            c_ix = ee÷hist_freq
+            history[c_ix] = Tracker.data(objective)
+            # If lr too high, objective explodes: exit
+            if c_ix > 1 && history[c_ix] > (2 * history[c_ix-1] + 10)
+                @debug format("(bbb) ({:3d}/{:3d}) FAIL. obj_t {:.3f}, obj_t-1 {:.3f}", ee, epochs, history[c_ix], history[c_ix-1])
+                return d, false
+            end
+            # Capture long term trend in stochastic objective
+            if ee > s_wdw*hist_freq
+                # Moving window
+                s_hist[(c_ix - s_wdw+1)] = mean(history[(c_ix - s_wdw+1):(c_ix)])
+                if ee > 3*s_wdw*hist_freq &&
+                s_hist[(c_ix- s_wdw+1)] > converge_thrsh*s_hist[(c_ix - 3*s_wdw+1)]
+                    epochs = ee
+                    break
+                end
+            end
+        end
     end
     μs = Tracker.data(mupars)
     Σs = zeros(partype(d), n_d, n_d, k)
 
     for j in 1:k
-        Σs[:,:,j] = let xd=Tracker.data(invLTpars[j]); s=inv(xd'xd); (s+s')/2; end
+        Σs[:,:,j] = let xd=Tracker.data(build_mat(invLTpars[j], invDiagPars[j], n_d)); s=inv(xd'xd); (s+s')/2; end
     end
-    return μs, Σs, history
+
+    d_out = GMM(μs, Σs, ones(k)/k)
+    return d_out, true
 end
 
 
