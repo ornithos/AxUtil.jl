@@ -5,11 +5,12 @@ using StatsFuns: logsumexp
 using Distributions
 import Distributions: partype, logpdf
 using Formatting: format
-using Random: randperm
+using Random # randperm, MersenneTwister
 using LinearAlgebra  #: cholesky, logdet, diag, inv, triu
 using NNlib: softmax
 using AxUtil
 using BSON
+using Logging
 
 export GMM, importance_sample, logpdf
 # ==== already exists in Distributions.jl
@@ -186,6 +187,29 @@ rmcomponents(d::GMM, ixs::Vector{T}) where T <: Bool = rmcomponents(d, convert(B
 rmcomponents(d::GMM, ixs::BitArray{1}) = GMM{partype(d)}(d.mus[.!ixs, :], d.sigmas[:, :, .!ixs], d.pis[.!ixs]/sum(d.pis[.!ixs]))
 update(d::GMM; mus=nothing, sigmas=nothing, pis=nothing) = GMM(something(mus, d.mus), something(sigmas, d.sigmas), something(pis, d.pis))
 
+
+function plot_gmm(dGMM::GMM; figsize=(10,10), alpha=0.5, bins=50, fill=false) where T <: AbstractFloat
+    d, k = size(dGMM), ncomponents(dGMM)
+    (d > 20) && throw("will not plot for d > 20")
+
+    fig, axs = PyPlot.subplots(d, d, figsize=figsize)
+    plottype = fill ? :fill : :plot
+
+    for ix = 1:d, iy = 1:d
+        if ix != iy
+            for j in 1:k
+                levcurv = AxUtil.Plot.gaussian_2D_level_curve_pts(dGMM.mus[j,:][[ix,iy],:], dGMM.sigmas[[ix,iy],[ix,iy],j])
+                axs[ix, iy][plottype](levcurv[:,1], levcurv[:,2], alpha=alpha*dGMM.pis[j]/maximum(dGMM.pis))
+            end
+        else
+            # for j in 1:k
+            #     axs[ix, iy][:plot](X[:, ix], bins=bins)
+            # end
+        end
+    end
+end
+
+
 function logpdf(d::GMM, X::Matrix{T}; thrsh_comp=0.005) where T <: AbstractFloat
     return gmm_llh(X, d.pis, d.mus, d.sigmas; thrsh_comp=thrsh_comp)
 end
@@ -345,26 +369,54 @@ end
 @inline function build_mat(x_lt, x_diag, d::Int)
     AxUtil.Flux.make_lt_strict(x_lt, d) + AxUtil.Flux.diag0(exp.(x_diag))
 end
+@inline _llh_unnorm(Scentered, Linv) = -0.5*sum(x->x*x, Linv * Scentered, dims=1)
 
-function optimise_components_bbb(d::GMM, log_f::Function, epochs::Int, batch_size_per_cls::Int; converge_thrsh::AbstractFloat=0.999, lr::AbstractFloat=1e-3)
+function optimise_components_bbb(d::GMM, log_f::Function, epochs::Int, batch_size_per_cls::Int;
+            converge_thrsh::AbstractFloat=0.999, lr::AbstractFloat=1e-3, auto_lr::Bool=true)
     success = 0
-    nanfail = 0   # permit up to 3 in a row failures due to NaN (as this is probably from blow-up.)
+    nanfail = 0   # permit up to 3 in a row failures due to NaN (as this can be from blow-up.)
+    local history  # local scope of history for persistence outside loop.
     while success < 1
         @debug format("(bbb) LEARNING RATE: {:.3e}", lr)
-        d, success = _optimise_components_bbb(d, log_f, epochs, batch_size_per_cls; converge_thrsh=converge_thrsh, lr=lr, exitifnan=(nanfail<3))
-        lr *= 0.8
+        d, history, success = _optimise_components_bbb(d, log_f, epochs, batch_size_per_cls; converge_thrsh=converge_thrsh, lr=lr, exitifnan=(nanfail<3), auto_lr=auto_lr)
+        lr *= 0.5
         nanfail = (success < 0) * (nanfail - success)   # increment if success = -1, o.w. reset
     end
-    return d
+    return d, history
+end
+
+function _failure_dump(ee, dGMM_orig, mupars, invLTpars, invDiagPars)
+    display(format("ee = {:d}", ee))
+    display("mus originally:")
+    display(dGMM_orig.mus)
+    display("sigmas originally:")
+    display([dGMM_orig.sigmas[:,:,j] for j in 1:size(dGMM_orig.sigmas, 3)])
+    display("mu pars:")
+    display(mupars.data)
+    display("mu grad:")
+    display(mupars.grad)
+    display("LT pars:")
+    display([x.data for x in invLTpars])
+    display("LT grad:")
+    display([x.grad for x in invLTpars])
+    display("Diag pars:")
+    display([x.data for x in invDiagPars])
+    display("Diag grad:")
+    display([x.grad for x in invDiagPars])
 end
 
 function _optimise_components_bbb(d::GMM, log_f::Function, epochs::Int, batch_size_per_cls::Int;
-        converge_thrsh::AbstractFloat=0.999, lr::AbstractFloat=1e-3, exitifnan::Bool=false)
+        converge_thrsh::AbstractFloat=0.999, lr::AbstractFloat=1e-3, exitifnan::Bool=false, auto_lr::Bool=true)
     # @debug "(bbb) Input GMM: " dGMM=d
     # (ncomponents(d) > 8) && @debug "(bbb) Input GMM: " dGMM=rmcomponents(d, collect(1:8))
     # (ncomponents(d) > 16) && @debug "(bbb) Input GMM: " dGMM=rmcomponents(d, collect(1:16))
     n_d = size(d)
     k = ncomponents(d)
+    if Logging.min_enabled_level(current_logger()) ≤ LogLevel(-500)
+        for j = 1:k
+            @logmsg LogLevel(-500) format("sigma {:d} = ", j) d.sigmas[:,:,j]
+        end
+    end
     invLTpars = [Matrix(inv(cholesky(d.sigmas[:,:,j]).L)) for j in 1:k]  # note that ∵ inverse, Σ^{-1} = L'L
     invDiagPars = [Flux.param(log.(x[diagind(x)])) for x in invLTpars]
     invLTpars = [Flux.param(x[tril!(trues(n_d, n_d), -1)]) for x in invLTpars]
@@ -376,78 +428,82 @@ function _optimise_components_bbb(d::GMM, log_f::Function, epochs::Int, batch_si
     history = zeros(Int(floor(epochs/hist_freq)))
     s_hist = zeros(Int(floor(epochs/hist_freq)))
 
-    blkreduction = cat([trues(1,n_d) for i in 1:k]..., dims=[1,2])
+    rng = MersenneTwister()   # to ensure common random variates for reconstruction and entropy grads.
     for ee in 1:epochs
-        normcnst = Tracker.collect([sum(invDiagPars[r]) for r in 1:k]) #.-n_d/2*log(2π)
         invLT = [build_mat(x_lt, x_dia, n_d) for (x_lt, x_dia) in zip(invLTpars, invDiagPars)]
-        blk_invLT = cat(invLT..., dims=[1,2])
         objective = 0.
 
-        # Take sample from each component and backprop through (stoch.) KL
+        # Take sample from each component and backprop through recon. term of KL
+        # ===> FLUX / AD PART OF PROCEDURE ===================
+        ee_seed = rand(rng, 1:2^32 - 1)
+        Random.seed!(ee_seed)
         for j in 1:k
             x = mupars[j,:] .+ inv(invLT[j])*randn(n_d, batch_size_per_cls)
-            objective += -sum(log_f(x))/batch_size_per_cls  # reconstruction
-            log_q_terms_interm = blk_invLT * (repeat(x, outer=[k,1]) .- reshape(mupars', length(mupars)))
-            log_q_terms = -0.5*blkreduction * (log_q_terms_interm .* log_q_terms_interm)
-#             log_q_terms = Tracker.collect(reduce(vcat, [llh_unnorm(x .- mupars[r,:], invLTpars[r]) for r in 1:k]))
-#             @assert isapprox(log_q_terms2, log_q_terms)
-            objective += sum(AxUtil.Flux.logsumexpcols(log_q_terms .+ normcnst))/batch_size_per_cls
+            objective_j = -sum(log_f(x))/batch_size_per_cls  # reconstruction
+            Tracker.back!(objective_j)  # accumulate gradients
+            objective += objective_j.data  # for objective value
+        end
+        # ====================================================
+
+        # ===> Calculate entropy of GMM (and gradient thereof)
+        Random.seed!(ee_seed)   # common r.v.s (variance reduction)
+        _obj, ∇μ, ∇Ls = _gmm_entropy_and_grad(mupars.data, [x.data for x in invLT]; M=batch_size_per_cls)
+        objective += _obj
+
+        mupars.grad .+= ∇μ
+        if any(isnan.(mupars.grad))
+            display("FAILURE IN MU GRAD")
+            _failure_dump(ee, d, mupars, invLTpars, invDiagPars)
+            # if exitifnan
+            #     return d, -1
+            # end
         end
 
-        if isnan(objective.data)
+        # convert gradient of ∇L --> gradient of ltri and logdiag components.
+        for j in 1:k
+            invLTpars[j].grad .+= ∇Ls[j][tril!(trues(n_d, n_d), -1)] # extract lowertri elements
+            invDiagPars[j].grad .+= (∇Ls[j][diagind(∇Ls[j])]  .* exp.(invDiagPars[j].data))
+
+            if any(isnan.(invLTpars[j].grad)) || any(isnan.(invDiagPars[j].grad))
+                display(format("FAILURE IN INVLT GRAD {:d}", j))
+                _failure_dump(ee, d, mupars, invLTpars, invDiagPars)
+                # if exitifnan
+                #     return d, -1
+                # end
+            end
+        end
+        # ====================================================
+
+
+        # ==> [DEBUGGING] check for problems, and dump a bunch of data if so.
+        if isnan(objective)
+            @warn "objective is NaN"
+            _failure_dump(ee, d, mupars, invLTpars, invDiagPars)
             if exitifnan
-                return d, -1
-            end
-            display(format("ee = {:d}", ee))
-            display(d.mus)
-            display("sigmas originally:")
-            display([d.sigmas[:,:,j] for j in 1:k])
-            display("LT pars:")
-            display(invLTpars)
-            display("normconst:")
-            display(normcnst)
-            for j in 1:k
-                x = mupars[j,:] .+ inv(invLTpars[j])*randn(n_d, batch_size_per_cls)
-                objective += -sum(log_f(x))/batch_size_per_cls  # reconstruction
-                log_q_terms_interm = blk_invLT * (repeat(x, outer=[k,1]) .- reshape(mupars', length(mupars)))
-                log_q_terms = -0.5*blkreduction * (log_q_terms_interm .* log_q_terms_interm)
-                display(format("j = {:d}", j))
-                display(log_q_terms_interm.data)
-                display(log_q_terms.data)
-                display(sum(AxUtil.Flux.logsumexpcols(log_q_terms .+ normcnst)).data/batch_size_per_cls)
+                return d, history, -1
             end
         end
+        # ====================================================
 
-
-        # Gradient and optimisation
-        Tracker.back!(objective)
-        # #  -- respect constraints (projected GD)
-        # for j in 1:k
-        #     invLTpars[j].grad[triu!(trues(n_d, n_d), 1)] .= 0.  # keep Lower Triangular.
-        # end
         opt()  # Perform gradient step / zero grad.
-        # diagix = diagind(invLTpars[1])
-        # for j in 1:k
-        #     invLTpars[j].data[diagix] .= max.(invLTpars[j].data[diagix], 1e-6)  # avoid negative / zero diagonal
-        # end
-
         # Objective and convergence
         if ee % hist_freq == 0
-            @debug format("(bbb) ({:3d}/{:3d}), objective: {:.3f}", ee, epochs, Tracker.data(objective))
+            @debug format("(bbb) ({:3d}/{:3d}), objective: {:.3f}", ee, epochs, objective)
             c_ix = ee÷hist_freq
-            history[c_ix] = Tracker.data(objective)
+            history[c_ix] = objective
             # If lr too high, objective explodes: exit
-            if c_ix > 1 && history[c_ix] > (2 * history[c_ix-1] + 10)
+            if auto_lr && c_ix > 20 && ((history[c_ix] - history[c_ix-1]) > 10 * std(history[(c_ix-20):(c_ix-10)]))
+                @warn "possible exploding objective: restarting with lower lr."
                 @debug format("(bbb) ({:3d}/{:3d}) FAIL. obj_t {:.3f}, obj_t-1 {:.3f}", ee, epochs, history[c_ix], history[c_ix-1])
-                return d, false
+                return d, history, false
             end
             # Capture long term trend in stochastic objective
             if ee > s_wdw*hist_freq
                 # Moving window
                 s_hist[(c_ix - s_wdw+1)] = mean(history[(c_ix - s_wdw+1):(c_ix)])
                 if ee > 3*s_wdw*hist_freq &&
-                s_hist[(c_ix- s_wdw+1)] > converge_thrsh*s_hist[(c_ix - 3*s_wdw+1)]
-                    epochs = ee
+                    s_hist[(c_ix- s_wdw+1)] > converge_thrsh*s_hist[(c_ix - 3*s_wdw+1)]
+                    history = history[1:c_ix]
                     break
                 end
             end
@@ -461,8 +517,52 @@ function _optimise_components_bbb(d::GMM, log_f::Function, epochs::Int, batch_si
     end
 
     d_out = GMM(μs, Σs, ones(k)/k)
-    return d_out, true
+    return d_out, history, true
 end
 
+function _gmm_entropy_and_grad(mupars::Matrix{T}, invLT::Array; M=batch_size_per_cls) where T <: AbstractFloat
+    k, n_d = size(mupars)
+    normcnst = [sum(log.(diag(invLT[i]))) for i in 1:k]
+
+    Ls = invLT
+    Linvs = [inv(x) for x in invLT]
+    precs = [L'L for L in Ls]
+
+    objective = 0.
+    ∇mu = zeros(T, k, n_d)
+    ∇L = [zeros(T, n_d, n_d) for i in 1:k]
+
+    for c in 1:k
+        x = mupars[c,:] .+ Linvs[c]*randn(n_d, M)
+
+        log_q = Array{T, 2}(undef, k, M)
+        for j in 1:k
+            log_q[j,:] = _llh_unnorm(x .- mupars[j,:], invLT[j]) .+ normcnst[j]
+        end
+        R, _mllh = AxUtil.Math.softmax_lse(log_q)
+        objective += sum(_mllh)/M - log(k)/M
+        Mcj = sum(R, dims=2)  # effective number of points from each cluster j for sample from c
+
+        # Calculate ∇μ, ∇L
+        for j in 1:k
+            if j == c
+                ∇L[c] += Linvs[c]' * Mcj[j] / M
+                continue
+            end
+            @views RXmMu = R[j:j, :] .* (x .- mupars[j, :])
+
+            μ_term = mean(precs[j] * RXmMu, dims=2)
+            ∇mu[j,:] += μ_term
+            ∇mu[c,:] -= μ_term
+
+            # ===== more difficult ∇L terms ============
+            # (s == c) update component c for L_c in MC simulation
+            @views ∇L[c] += Linvs[c]' * precs[j] * (RXmMu * (x .- mupars[c, : ])')/M # L_c^{-T}*L_j'L_j(x-μ_j)(x-μ_c)^T
+            # (s == j) update component j for factors in likelihood
+            @views ∇L[j] += (Mcj[j] * Linvs[j]' - Ls[j] * RXmMu * (x .- mupars[j,:])')/M # L^{-T} - L(x-μ)(x-μ)^T
+        end
+    end
+    return objective, ∇mu, ∇L
+end
 
 end  # module
