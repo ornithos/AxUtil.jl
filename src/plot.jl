@@ -36,22 +36,23 @@ end
                                    Plotting zoo
  ==================================================================================#
 
-function pairplot(X::AbstractArray{T, 2}; figsize=(10,10), alpha=0.5, bins=50) where T <: AbstractFloat
+function pairplot(X::AbstractArray{T, 2}; figsize=(10,10), alpha=0.5, bins=50, axs=nothing, kwargs...) where T <: AbstractFloat
     n, d = size(X)
     (d > 20) && throw("will not plot for d > 20")
 
-    fig, axs = PyPlot.subplots(d, d, figsize=figsize)
+    (axs == nothing) && ((fig, axs) = PyPlot.subplots(d, d, figsize=figsize))
     for ix = 1:d, iy = 1:d
         if ix != iy
             if alpha isa Number
-                axs[ix, iy][:scatter](X[:, iy], X[:, ix], alpha=alpha)
+                axs[iy, ix][:scatter](X[:, ix], X[:, iy], alpha=alpha, kwargs...)
             elseif alpha isa AbstractArray
-                scatter_alpha(X[:,iy], X[:,ix], alpha, ax=axs[ix,iy])
+                scatter_alpha(X[:,ix], X[:,iy], alpha, ax=axs[iy,ix], kwargs...)
             end
         else
             axs[ix, iy][:hist](X[:, ix], bins=bins)
         end
     end
+    return axs
 end
 
 
