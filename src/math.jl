@@ -54,6 +54,15 @@ softmax_lse(xs) = softmax_lse!(similar(xs), xs)
 
 # logsumexprows: see flux.jl
 
+function logsumexpcols(X::AbstractArray{T}) where {T<:Real}
+    n = size(X,2)
+    out = zeros(n)
+    Base.Threads.@threads for i = 1:n
+        @views out[i] = logsumexp(X[:,i])
+    end
+    return out
+end
+
 
 function sq_diff_matrix(X, Y)
     """
@@ -99,7 +108,7 @@ function num_grad(fn, X, h=1e-8; verbose=true)
         resize_y = !(ndims(f_x) <= 2 && any(im_f_shp .== 1))
         @assert ndims(f_x) <= 2 "image of fn is tensor. Not supported."
     end
-        
+
     m = Int64(prod(max.(im_f_shp, 1)))
 
     X = X[:]
@@ -116,7 +125,7 @@ function num_grad(fn, X, h=1e-8; verbose=true)
             g[ii] = grad
         end
     end
-    
+
     verbose && resize_x && resize_y &&
         println("WARNING: Returning gradient as matrix size n(fn output) x n(variables)")
 
@@ -153,7 +162,7 @@ function num_grad_spec(fn, X, cart_ix, h=1e-8; verbose=true)
         resize_y = !(ndims(f_x) <= 2 && any(im_f_shp .== 1))
         @assert ndims(f_x) <= 2 "image of fn is tensor. Not supported."
     end
-        
+
     m = Int64(prod(max.(im_f_shp, 1)))
 
     g = zeros(m, 1)
