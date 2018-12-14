@@ -4,6 +4,7 @@ using Base.Threads: @threads
 using LinearAlgebra
 using StatsFuns: logsumexp
 using NNlib
+using ..Arr: eye
 
 function softmax2(logp; dims=2)
     p = exp.(logp .- maximum(logp, dims=dims))
