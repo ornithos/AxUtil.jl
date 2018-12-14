@@ -413,7 +413,7 @@ function dpmeans_fit(X::Matrix{T}; max_iter::Int=100, shuffleX::Bool=true,
     end
 
     # collapse tiny clusters
-    bson("dbg/dpmean.bson", Z=Z, mu=mu, X=X)
+    # bson("dbg/dpmean.bson", Z=Z, mu=mu, X=X)
     @info format("collapse thrsh is {:d}", collapse_thrsh)
     if collapse_thrsh > 0
         k_inds, ks = groupinds(Z)
