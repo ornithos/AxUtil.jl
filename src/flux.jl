@@ -8,24 +8,29 @@ using Flux: Tracker
 using Flux.Tracker: @grad, gradcheck
 import NNlib
 
+using .Arr: eye
+using .Math: make_lt, unmake_lt, make_lt_strict, unmake_lt_strict
+
+
 FLUX_TESTS = false   # perform gradient checks
 
 # Make Lower Triangular Matrix / Can backprop through
 # ===================================
-function make_lt(x, d::Int)
-    @assert (length(x) == Int(d*(d+1)/2))
-    M = zeros(d,d)
-    x_i = 1
-    for j=1:d, i=j:d
-        M[i,j] = x[x_i]
-        x_i += 1
-    end
-    return M
-end
-
-function unmake_lt(M, d)
-    return M[tril!(trues(d,d))]
-end
+# => Moved to Math
+# function make_lt(x, d::Int)
+#     @assert (length(x) == Int(d*(d+1)/2))
+#     M = zeros(d,d)
+#     x_i = 1
+#     for j=1:d, i=j:d
+#         M[i,j] = x[x_i]
+#         x_i += 1
+#     end
+#     return M
+# end
+#
+# function unmake_lt(M, d)
+#     return M[tril!(trues(d,d))]
+# end
 
 make_lt(x::TrackedArray, d::Int) = Tracker.track(make_lt, x, d)
 
@@ -36,20 +41,21 @@ end
 
 # Make Strictly Lower Triangular Matrix
 # ===================================
-function make_lt_strict(x, d::Int)
-    @assert (length(x) == Int(d*(d-1)/2))
-    M = zeros(d,d)
-    x_i = 1
-    for j=1:d-1, i=j+1:d
-        M[i,j] = x[x_i]
-        x_i += 1
-    end
-    return M
-end
-
-function unmake_lt_strict(M, d)
-    return M[tril!(trues(d,d), -1)]
-end
+# => Moved to Math
+# function make_lt_strict(x, d::Int)
+#     @assert (length(x) == Int(d*(d-1)/2))
+#     M = zeros(d,d)
+#     x_i = 1
+#     for j=1:d-1, i=j+1:d
+#         M[i,j] = x[x_i]
+#         x_i += 1
+#     end
+#     return M
+# end
+#
+# function unmake_lt_strict(M, d)
+#     return M[tril!(trues(d,d), -1)]
+# end
 
 make_lt_strict(x::TrackedArray, d::Int) = Tracker.track(make_lt_strict, x, d)
 
@@ -133,5 +139,6 @@ if FLUX_TESTS
     @test gradtest((X) -> sin.(logsumexprows(X .* X)), (6,10))
     @test gradtest((X) -> sin.(logsumexpcols(X .* X)), (6,10))
 end
+
 
 end

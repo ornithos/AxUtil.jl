@@ -78,6 +78,58 @@ function sq_diff_matrix(X, Y)
     return out
 end
 
+
+#=================================================================================
+                    Special Matrix Constructors
+==================================================================================#
+
+function make_lt(x, d::Int)
+    @assert (length(x) == Int(d*(d+1)/2))
+    M = zeros(d,d)
+    x_i = 1
+    for j=1:d, i=j:d
+        M[i,j] = x[x_i]
+        x_i += 1
+    end
+    return M
+end
+
+
+function unmake_lt(M, d)
+    return M[tril!(trues(d,d))]
+end
+
+
+function make_lt_strict(x, d::Int)
+    @assert (length(x) == Int(d*(d-1)/2))
+    M = zeros(d,d)
+    x_i = 1
+    for j=1:d-1, i=j+1:d
+        M[i,j] = x[x_i]
+        x_i += 1
+    end
+    return M
+end
+
+
+function unmake_lt_strict(M, d)
+    return M[tril!(trues(d,d), -1)]
+end
+
+
+function make_skew(x, d)
+    S = make_lt_strict(x, d::Int)
+    return S - S'
+end
+
+
+function cayley_orthog(x, d)
+    S = make_skew(x, d)
+    I = eye(d)
+    return (I - S) / (I + S)  # (I - S)(I + S)^{-1}. Always nonsingular.
+end
+
+
  #=================================================================================
                         Numerical Gradient checking
  ==================================================================================#
