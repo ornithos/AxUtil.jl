@@ -9,7 +9,7 @@ using Flux.Tracker: @grad, gradcheck
 import NNlib
 
 using ..Arr: eye
-using ..Math: make_lt, unmake_lt, make_lt_strict, unmake_lt_strict
+import ..Math: make_lt, unmake_lt, make_lt_strict, unmake_lt_strict
 
 
 FLUX_TESTS = false   # perform gradient checks
