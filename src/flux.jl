@@ -8,8 +8,8 @@ using Flux: Tracker
 using Flux.Tracker: @grad, gradcheck
 import NNlib
 
-using .Arr: eye
-using .Math: make_lt, unmake_lt, make_lt_strict, unmake_lt_strict
+using ..Arr: eye
+using ..Math: make_lt, unmake_lt, make_lt_strict, unmake_lt_strict
 
 
 FLUX_TESTS = false   # perform gradient checks
@@ -141,4 +141,90 @@ if FLUX_TESTS
 end
 
 
+#==================================================================
+                Flux Recurrent Cells
+==================================================================#
+
+
+mutable struct LDSCell_simple
+    A::Union{AbstractArray, TrackedArray}
+    h::Array{Float64,1}
+end
+
+# Operation
+function (m::LDSCell_simple)(h, x)
+    A = m.A
+    h = m.A * h
+    return h, h
+end
+
+hidden(m::LDSCell_simple) = m.h
+
+
+
+mutable struct LDSCell_simple_u
+    A::Union{AbstractArray, TrackedArray}
+    B::Union{AbstractArray, TrackedArray}
+    h::Array{Float64,1}
+end
+
+# Operation
+function (m::LDSCell_simple_u)(h, x)
+    A, B = m.A, m.B
+    h = A * h + B * x
+    return h, h
+end
+
+hidden(m::LDSCell_simple_u) = m.h
+
+
+mutable struct LDSCell_simple_diag_u
+    A::Union{AbstractArray, TrackedArray}
+    B::Union{AbstractArray, TrackedArray}
+    h::Array{Float64,1}
+end
+
+# Operation
+function (m::LDSCell_simple_diag_u)(h, x)
+    A, B = m.A, m.B
+    h = A .* h + B .* x
+    return h, h
+end
+
+hidden(m::LDSCell_simple_diag_u) = m.h
+
+
+LDSCell_scalar_u(a::Tracker.TrackedReal, b::Tracker.TrackedReal, h) = LDSCell_scalar_u_track(a, b, h)
+LDSCell_scalar_u(a::AbstractFloat, b::AbstractFloat, h) = LDSCell_scalar_u_notrk(a, b, h)
+
+mutable struct LDSCell_scalar_u_notrk
+    A::AbstractFloat
+    B::AbstractFloat
+    h::AbstractFloat
+end
+
+# Operation
+function (m::LDSCell_scalar_u_notrk)(h, x)
+    A, B = m.A, m.B
+    h = A * h + B * x
+    return h, h
+end
+
+hidden(m::LDSCell_scalar_u_notrk) = m.h
+
+
+mutable struct LDSCell_scalar_u_track
+    A::Tracker.TrackedReal
+    B::Tracker.TrackedReal
+    h::Tracker.TrackedReal
+end
+
+# Operation
+function (m::LDSCell_scalar_u_track)(h, x)
+    A, B = m.A, m.B
+    h = A * h + B * x
+    return h, h
+end
+
+hidden(m::LDSCell_scalar_u_track) = m.h
 end
