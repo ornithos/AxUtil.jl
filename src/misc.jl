@@ -1,6 +1,6 @@
 using Flux: TrackedVector, TrackedMatrix
 using Flux.Tracker: TrackedVecOrMat, TrackedReal
-
+import Base: convert
 
 macro noopwhen(condition, expression)
     quote
@@ -19,7 +19,7 @@ function countmap(x::Vector{T}; d::Int=-1) where T <: Signed
     for cx in x
         out[cx] += 1
     end
-    return out 
+    return out
 end
 
 
@@ -47,11 +47,17 @@ invert_index(x::Vector{T}) where T <: Signed = sortperm(x)
 
 # useful for pipes
 dropdim1(x::Union{Number, TrackedReal}) = x
-dropdim1(x::Union{VecOrMat, TrackedVecOrMat}) = dropdims(x, dims=1) 
+dropdim1(x::Union{VecOrMat, TrackedVecOrMat}) = dropdims(x, dims=1)
 
 dropdim2(x::Union{Matrix, TrackedMatrix}) = dropdims(x, dims=2)
 dropdim2(x::Union{Vector, TrackedVector}) = x
 dropdim2(x::Union{Number, TrackedReal}) = x
+
+
+# converting NamedTuple -> Dict fails if multiple types in the NamedTuple.
+# The *collect* in the second zip arg here is the work-around.
+convert(::Type{Dict}, nt::NamedTuple) = Dict(k => v for (k,v) in zip(keys(nt), collect(values(nt))))
+
 
 # issue #29560 mkborregaard solution to repelem/rep like behaviour for vectors.
 # Will likely be obselete when PR accepted.
