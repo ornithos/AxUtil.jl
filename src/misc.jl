@@ -1,5 +1,6 @@
 using Flux: TrackedVector, TrackedMatrix
 using Flux.Tracker: TrackedVecOrMat, TrackedReal
+using Dates
 import Base: convert
 
 macro noopwhen(condition, expression)
@@ -98,4 +99,16 @@ function Base.repeat(a::AbstractVector, m::AbstractVector{<:Integer})
         end
     end
     return b
+end
+
+
+
+function construct_unique_filename(filestem; path="./", date_fmt="yyyy_mm_dd", ext="")
+    fnm_base = filestem * Dates.format(now(), date_fmt)
+    fnm_uid = 0
+    _construct_fnm(uid) = fnm_base * "_" * format("{:03d}", uid) * ext
+    while isfile(_construct_fnm(fnm_uid))
+        fnm_uid += 1
+    end
+    return _construct_fnm(fnm_uid)
 end
