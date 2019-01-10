@@ -26,14 +26,14 @@ function softmax_lse!(out::AbstractVecOrMat{T}, xs::AbstractVecOrMat{T}) where T
     @threads for j = 1:size(xs, 2)
         @inbounds begin
             # out[end, :] .= maximum(xs, 1)
-            out[end, j] = xs[end, j]
-            for i = 1:size(xs, 1)
-                out[end, j] = max(out[end, j], xs[i, j])
+            m = xs[1, j]
+            for i = 2:size(xs, 1)
+                m = max(m, xs[i, j])
             end
             m = out[end, j]
             # out .= exp(xs .- out[end, :])
             for i = 1:size(out, 1)
-                out[i, j] = exp(xs[i, j] - out[end, j])
+                out[i, j] = exp(xs[i, j] - m)
             end
             # out ./= sum(out, 1)
             s = zero(eltype(out))
