@@ -80,6 +80,18 @@ function sq_diff_matrix(X, Y)
 end
 
 
+function medoid(x::Matrix{T}) where T <: Number
+    """
+    Calculates the medoid of a set of datapoints
+    stored as rows in matrix x.
+    This element is the one that has the minimum
+    L2 distance to all other points in the set.
+    """
+    distMatrix = AxUtil.Math.sq_diff_matrix(x, x)
+    ix = findmin(sum(distMatrix, dims=1)[:])[2]
+    return x[ix,:], ix
+end
+
 #=================================================================================
                     Special Matrix Constructors
 ==================================================================================#
