@@ -30,7 +30,6 @@ function softmax_lse!(out::AbstractVecOrMat{T}, xs::AbstractVecOrMat{T}) where T
             for i = 2:size(xs, 1)
                 m = max(m, xs[i, j])
             end
-            m = out[end, j]
             # out .= exp(xs .- out[end, :])
             for i = 1:size(out, 1)
                 out[i, j] = exp(xs[i, j] - m)
