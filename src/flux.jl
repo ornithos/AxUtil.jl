@@ -1,6 +1,7 @@
 module Flux
 
 using LinearAlgebra
+import LinearAlgebra: logdet
 import StatsFuns: logsumexp
 
 using Flux, Test
@@ -132,12 +133,28 @@ logsumexpcols(X::TrackedArray) = Tracker.track(logsumexpcols, X)
 end
 
 
+logdet(X::TrackedMatrix) = Tracker.track(logdet, X)
+
+@grad function logdet(X)
+  return logdet(X.data), Δ -> (inv(X)' * Δ,)
+end
+
+
+# # => MOST GAUSSIAN LLH FUNCTIONS CONTAIN CHOLESKY FACTORISATIONS: THIS AVOIDS IT.
+# function flux_log_gauss_llh_prec(X, mu, prec)
+#     d = size(X,1)
+#     exponent = -0.5*sum((X .- mu).*(prec*(X .- mu)), dims=1)[:]
+#     lognormconst = -d*log(2*pi)/2 +0.5*logdet(prec)  #.-0.5*(-2*sum(log.(diag(invLT))))
+#     return exponent .+ lognormconst
+# end
+
 if FLUX_TESTS
     @test gradtest((x, A) -> make_lt(log.(x), 5) * A, 10, (5,5))
     @test gradtest((x, A) -> diag0(cos.(x)) * A, 5, (5,5))
     @test gradtest((X) -> sin.(logsumexp(X .* X)), (6,))
     @test gradtest((X) -> sin.(logsumexprows(X .* X)), (6,10))
     @test gradtest((X) -> sin.(logsumexpcols(X .* X)), (6,10))
+    @test gradtest((X) -> sin.(logdet(X .* X)), (6,6))
 end
 
 
