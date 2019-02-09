@@ -1,6 +1,6 @@
 module Random
 
-using Distributions
+using Distributions, Sobol
 using LinearAlgebra
 
  #=================================================================================
@@ -26,20 +26,20 @@ function multinomial_indices(n::Int, p::Vector{Float64})
     km1 = k - 1
     x = zeros(Int32, n)
     op_ix = 1
-    
+
     while i < km1 && n > 0
         i += 1
         @inbounds pi = p[i]
-        if pi < rp            
+        if pi < rp
             xi = rand(Binomial(n, pi / rp))
             x[op_ix:(op_ix+xi-1)] .= i
             op_ix += xi
             n -= xi
             rp -= pi
-        else 
+        else
             # In this case, we don't even have to sample
             # from Binomial. Just assign remaining counts
-            # to xi. 
+            # to xi.
             x[op_ix:(op_ix+n-1)] .= i
             n = 0
         end
@@ -49,7 +49,7 @@ function multinomial_indices(n::Int, p::Vector{Float64})
         x[op_ix:end] .= i+1
     end
 
-    return x  
+    return x
 end
 
 
@@ -61,18 +61,18 @@ function smp_from_logprob(n_samples::Int, logp::Vector{Float64})
     p = exp.(logp .- maximum(logp))
     p /= sum(p)
     return multinomial_indices(n_samples, p)
-end   
+end
 
 
 function multinomial_indices_linear(n::Int, p::AbstractArray)
     #= multinomial sampling for when n is small, and length(p)
-       is large. This performs n * (linear) scans of 
+       is large. This performs n * (linear) scans of
        the vector `p`, with very little extra overhead.
        More efficiency could be achieved here with larger n.
     =#
     m = length(p)
     x = zeros(Int32, n)
-    
+
     function linearsearch(p::AbstractArray, m::Int64, rn)
         cs = 0.0
         for ii in 1:m
@@ -83,7 +83,7 @@ function multinomial_indices_linear(n::Int, p::AbstractArray)
         end
         return m
     end
-        
+
     for i in 1:n
         rn = rand()
         @inbounds x[i] = linearsearch(p, m, rn)
@@ -103,6 +103,41 @@ function multinomial_indices_binsearch(n::Int, p::Vector{T}) where T <: Abstract
         x[i] = searchsortedfirst(cump, rand()*cump[end])
     end
     return x
+end
+
+
+#=================================================================================
+                        Quasi Monte Carlo
+ ==================================================================================#
+
+function randomised_sobol(n, d)
+    s = SobolSeq(d)
+    p = reduce(hcat, [next!(s) for i = 1:n])
+    ϵ = rand(d)
+    prand = [(p[j,:] .+ ϵ[j]) .% 1.0 for j in 1:d]
+    return hcat(prand...)
+end
+
+# randomised Sobol within rectangle
+function uniform_rand_sobol(n, lims...)
+    d = length(lims)
+    rsob = randomised_sobol(n, d)
+    for (i, interval) in enumerate(lims)
+        @assert (length(interval) == 2) format("interval {:d} does not have length 2", i)
+        rsob[:,i] .*= diff(interval)
+        rsob[:,i] .+= interval[1]
+    end
+    return rsob
+end
+
+# randomised Sobol Gaussian random variates
+function sobol_gaussian(n, d)
+    s = SobolSeq(d)
+    p = reduce(hcat, [next!(s) for i = 1:n])
+    ϵ = rand(d)
+    prand = [(p[j,:] .+ ϵ[j]) .% 1.0 for j in 1:d]
+    p = reduce(vcat, [quantile.(Normal(), prand[j])' for j in 1:d])'
+    return p
 end
 
 #=================================================================================
