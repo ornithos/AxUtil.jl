@@ -2,7 +2,7 @@ module Random
 
 using Distributions, Sobol
 using LinearAlgebra
-
+using Random: GLOBAL_RNG, MersenneTwister
  #=================================================================================
                         Multinomial *Index* Sampling.
 
@@ -49,7 +49,7 @@ function multinomial_indices(n::Int, p::Vector{Float64})
         x[op_ix:end] .= i+1
     end
 
-    return x
+    return xx
 end
 
 
@@ -110,18 +110,22 @@ end
                         Quasi Monte Carlo
  ==================================================================================#
 
-function randomised_sobol(n, d)
+randomised_sobol(n, d) = randomised_sobol(GLOBAL_RNG, n, d)
+uniform_rand_sobol(n, lims...) = uniform_rand_sobol(GLOBAL_RNG, n, lims...)
+sobol_gaussian(n, d) = sobol_gaussian(GLOBAL_RNG, n, d)
+
+function randomised_sobol(rng::MersenneTwister, n, d)
     s = SobolSeq(d)
     p = reduce(hcat, [next!(s) for i = 1:n])
-    ϵ = rand(d)
+    ϵ = rand(rng, d)
     prand = [(p[j,:] .+ ϵ[j]) .% 1.0 for j in 1:d]
     return hcat(prand...)
 end
 
 # randomised Sobol within rectangle
-function uniform_rand_sobol(n, lims...)
+function uniform_rand_sobol(rng::MersenneTwister, n, lims...)
     d = length(lims)
-    rsob = randomised_sobol(n, d)
+    rsob = randomised_sobol(rng, n, d)
     for (i, interval) in enumerate(lims)
         @assert (length(interval) == 2) format("interval {:d} does not have length 2", i)
         rsob[:,i] .*= diff(interval)
@@ -131,10 +135,11 @@ function uniform_rand_sobol(n, lims...)
 end
 
 # randomised Sobol Gaussian random variates
-function sobol_gaussian(n, d)
+function sobol_gaussian(rng::MersenneTwister, n, d)
+    (n == 0) && return zeros(d,0)'
     s = SobolSeq(d)
     p = reduce(hcat, [next!(s) for i = 1:n])
-    ϵ = rand(d)
+    ϵ = rand(rng, d)
     prand = [(p[j,:] .+ ϵ[j]) .% 1.0 for j in 1:d]
     p = reduce(vcat, [quantile.(Normal(), prand[j])' for j in 1:d])'
     return p

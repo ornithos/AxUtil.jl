@@ -6,7 +6,7 @@ import StatsFuns: logsumexp
 
 using Flux, Test
 using Flux: Tracker
-using Flux.Tracker: @grad, gradcheck
+using Flux.Tracker: @grad, gradcheck, TrackedVector, TrackedMatrix, TrackedVecOrMat
 import NNlib
 
 using ..Arr: eye
@@ -67,9 +67,9 @@ end
 
 # Make Diagonal Matrix (current Flux version is more general but is Tracked{Tracked} :/  ).
 # ===================================
-function diag0(x)
+function diag0(x::Array{T,1})::Array{T,2} where T <: Real
     d = length(x)
-    M = zeros(d,d)
+    M = zeros(T, d,d)
     M[diagind(M)] = x
     return M
 end
@@ -165,7 +165,7 @@ end
 
 mutable struct LDSCell_simple
     A::Union{AbstractArray, TrackedArray}
-    h::Array{Float64,1}
+    h::Union{Array{T,1}, TrackedVector{T}} where T <: AbstractFloat
 end
 
 # Operation
@@ -182,7 +182,7 @@ hidden(m::LDSCell_simple) = m.h
 mutable struct LDSCell_simple_u
     A::Union{AbstractArray, TrackedArray}
     B::Union{AbstractArray, TrackedArray}
-    h::Array{Float64,1}
+    h::Array{T,1}  where T <: AbstractFloat
 end
 
 # Operation
@@ -198,7 +198,7 @@ hidden(m::LDSCell_simple_u) = m.h
 mutable struct LDSCell_simple_diag_u
     A::Union{AbstractArray, TrackedArray}
     B::Union{AbstractArray, TrackedArray}
-    h::Array{Float64,1}
+    h::Array{T,1}  where T <: AbstractFloat
 end
 
 # Operation
@@ -244,4 +244,29 @@ function (m::LDSCell_scalar_u_track)(h, x)
 end
 
 hidden(m::LDSCell_scalar_u_track) = m.h
+
+
+
+#==================================================================
+                Optimsation
+==================================================================#
+function zero_grad!(ps)
+    for p in ps
+        p.tracker.grad .= 0
+    end
+end;
+
+function normclip!(ps, thrsh)
+    g = reduce(vcat, [vec(p.tracker.grad) for p in ps])
+    m = norm(g)
+    if m > thrsh
+        scale = thrsh/m
+        for p in ps
+            p.tracker.grad .*= scale
+        end
+        return true
+    end
+    return false
+end
+
 end

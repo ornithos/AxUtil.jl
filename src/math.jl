@@ -86,7 +86,7 @@ function medoid(x::Matrix{T}) where T <: Number
     This element is the one that has the minimum
     L2 distance to all other points in the set.
     """
-    distMatrix = AxUtil.Math.sq_diff_matrix(x, x)
+    distMatrix = sq_diff_matrix(x, x)
     ix = findmin(sum(distMatrix, dims=1)[:])[2]
     return x[ix,:], ix
 end
@@ -95,7 +95,7 @@ end
                     Special Matrix Constructors
 ==================================================================================#
 
-function make_lt(x, d::Int)
+function make_lt(x::Array{T,1}, d::Int)::Array{T,2} where T <: Real
     @assert (length(x) == Int(d*(d+1)/2))
     M = zeros(d,d)
     x_i = 1
@@ -107,14 +107,14 @@ function make_lt(x, d::Int)
 end
 
 
-function unmake_lt(M, d)
+function unmake_lt(M::Array{T,2}, d)::Array{T,1} where T <: Real
     return M[tril!(trues(d,d))]
 end
 
 
-function make_lt_strict(x, d::Int)
+function make_lt_strict(x::Array{T,1}, d::Int)::Array{T,2} where T <: Real
     @assert (length(x) == Int(d*(d-1)/2))
-    M = zeros(d,d)
+    M = zeros(T, d,d)
     x_i = 1
     for j=1:d-1, i=j+1:d
         M[i,j] = x[x_i]
@@ -124,18 +124,18 @@ function make_lt_strict(x, d::Int)
 end
 
 
-function unmake_lt_strict(M, d)
+function unmake_lt_strict(M::Array{T,2}, d::Int)::Array{T,1} where T <: Real
     return M[tril!(trues(d,d), -1)]
 end
 
 
-function make_skew(x, d)
-    S = make_lt_strict(x, d::Int)
+function make_skew(x::AbstractArray{T,1}, d::Int)::AbstractArray{T,2} where T <: Real
+    S = make_lt_strict(x, d)
     return S - S'
 end
 
 
-function cayley_orthog(x, d)
+function cayley_orthog(x::AbstractArray{T,1}, d)::AbstractArray{T,2} where T <: Real
     S = make_skew(x, d)
     I = eye(d)
     return (I - S) / (I + S)  # (I - S)(I + S)^{-1}. Always nonsingular.
@@ -237,5 +237,14 @@ function num_grad_spec(fn, X, cart_ix, h=1e-8; verbose=true)
 
     return g
 end
+
+
+#=================================================================================
+                       Trigonometry
+==================================================================================#
+
+
+get_angle2π(cθ, sθ) = (cθ >= 0 ? asin(sθ) : sθ >= 0 ? π - asin(sθ) : -asin(sθ) - π)
+get_angle360(cθ, sθ) = get_angle2π(cθ, sθ)* 360 / (2π)
 
 end
