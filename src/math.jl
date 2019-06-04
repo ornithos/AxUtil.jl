@@ -4,6 +4,7 @@ using Base.Threads: @threads
 using LinearAlgebra
 using StatsFuns: logsumexp
 using NNlib
+using ArgCheck
 using ..Arr: eye
 
 function softmax2(logp; dims=2)
@@ -96,7 +97,7 @@ end
 ==================================================================================#
 
 function make_lt(x::Array{T,1}, d::Int)::Array{T,2} where T <: Real
-    @assert (length(x) == Int(d*(d+1)/2))
+    @argcheck (length(x) == Int(d*(d+1)/2))
     M = zeros(d,d)
     x_i = 1
     for j=1:d, i=j:d
@@ -107,13 +108,13 @@ function make_lt(x::Array{T,1}, d::Int)::Array{T,2} where T <: Real
 end
 
 
-function unmake_lt(M::Array{T,2}, d)::Array{T,1} where T <: Real
+function unmake_lt(M::AbstractMatrix{T}, d)::Array{T,1} where T <: Real
     return M[tril!(trues(d,d))]
 end
 
 
 function make_lt_strict(x::Array{T,1}, d::Int)::Array{T,2} where T <: Real
-    @assert (length(x) == Int(d*(d-1)/2))
+    @argcheck (length(x) == Int(d*(d-1)/2))
     M = zeros(T, d,d)
     x_i = 1
     for j=1:d-1, i=j+1:d
@@ -124,7 +125,7 @@ function make_lt_strict(x::Array{T,1}, d::Int)::Array{T,2} where T <: Real
 end
 
 
-function unmake_lt_strict(M::Array{T,2}, d::Int)::Array{T,1} where T <: Real
+function unmake_lt_strict(M::AbstractMatrix{T}, d::Int)::Array{T,1} where T <: Real
     return M[tril!(trues(d,d), -1)]
 end
 
@@ -138,9 +139,13 @@ end
 function cayley_orthog(x::AbstractArray{T,1}, d)::AbstractArray{T,2} where T <: Real
     S = make_skew(x, d)
     I = eye(d)
-    return (I - S) / (I + S)  # (I - S)(I + S)^{-1}. Always nonsingular.
+    return (I - S) / (I + S)  # (I - S)^{-1}(I + S). Always nonsingular.
 end
 
+
+function inverse_cayley_orthog(Q::AbstractMatrix{T}, d::Int=size(Q,1)) where T <: Real
+    unmake_lt_strict((I - Q ) / (I + Q), d)
+end
 
  #=================================================================================
                         Numerical Gradient checking
@@ -170,7 +175,7 @@ function num_grad(fn, X, h=1e-8; verbose=true)
     else
         im_f_shp = size(f_x)
         resize_y = !(ndims(f_x) <= 2 && any(im_f_shp .== 1))
-        @assert ndims(f_x) <= 2 "image of fn is tensor. Not supported."
+        @argcheck ndims(f_x) <= 2
     end
 
     m = Int64(prod(max.(im_f_shp, 1)))
@@ -224,7 +229,7 @@ function num_grad_spec(fn, X, cart_ix, h=1e-8; verbose=true)
     else
         im_f_shp = size(f_x)
         resize_y = !(ndims(f_x) <= 2 && any(im_f_shp .== 1))
-        @assert ndims(f_x) <= 2 "image of fn is tensor. Not supported."
+        @argcheck ndims(f_x) <= 2
     end
 
     m = Int64(prod(max.(im_f_shp, 1)))
