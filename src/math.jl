@@ -96,7 +96,7 @@ end
                     Special Matrix Constructors
 ==================================================================================#
 
-function make_lt(x::Array{T,1}, d::Int)::Array{T,2} where T <: Real
+function make_lt(x::AbstractArray{T,1}, d::Int)::Array{T,2} where T <: Real
     @argcheck (length(x) == Int(d*(d+1)/2))
     M = zeros(d,d)
     x_i = 1
@@ -113,7 +113,7 @@ function unmake_lt(M::AbstractMatrix{T}, d)::Array{T,1} where T <: Real
 end
 
 
-function make_lt_strict(x::Array{T,1}, d::Int)::Array{T,2} where T <: Real
+function make_lt_strict(x::AbstractArray{T,1}, d::Int)::Array{T,2} where T <: Real
     @argcheck (length(x) == Int(d*(d-1)/2))
     M = zeros(T, d,d)
     x_i = 1

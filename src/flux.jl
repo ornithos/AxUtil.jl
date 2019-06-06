@@ -97,7 +97,7 @@ end
 
 # Row-wise logsumexp. See math.jl in AxUtil. Gradient is fairly efficient with below.
 # ===================================
-function logsumexprows(X::Matrix{T}) where {T<:Real}
+function logsumexprows(X::AbstractMatrix{T}) where {T<:Real}
     #= iterate over rows of matrix with StatsFuns' logsumexp.
        This is primarily useful since we have a Flux-enabled
        version in the flux src in AxUtil.
@@ -117,7 +117,7 @@ logsumexprows(X::TrackedArray) = Tracker.track(logsumexprows, X)
 end
 
 
-function logsumexpcols(X::Matrix{T}) where {T<:Real}
+function logsumexpcols(X::AbstractMatrix{T}) where {T<:Real}
     n = size(X,2)
     out = zeros(n)
     Threads.@threads for i = 1:n
