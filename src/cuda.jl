@@ -2,15 +2,38 @@ module CUDA
 
 using ..CuArrays
 import ..Math: @argcheck
-import ..Math: make_lt, make_lt_strict, make_lt!, make_lt_strict!
+import ..Math: make_lt, make_lt_strict, make_lt!, make_lt_strict!, cayley_orthog
+import ..Arr: eye
+import Base: \
 
 function make_lt(x::CuArray{T,1}, d::Int)::CuArray{T,2} where T <: Real
     @argcheck (length(x) == Int(d*(d+1)/2))
     make_lt!(CuArrays.zeros(T, d, d), x, d)
 end
+
 function make_lt_strict(x::CuArray{T,1}, d::Int)::CuArray{T,2} where T <: Real
     @argcheck (length(x) == Int(d*(d-1)/2))
     return make_lt_strict!(CuArrays.zeros(T, d,d), x, d)
 end
+
+function \(A::CuArray{T, 2}, B::CuArray{T, 2}) where T <: AbstractFloat
+        @assert size(A) == size(B) "Only square matrices implemented for ldiv CuArrays (via LU)! (Needs QR for rectangular.)"
+        luA, ipiv = CuArrays.CUSOLVER.getrf!(copy(A))
+        CuArrays.CUSOLVER.getrs!('N', luA, ipiv, copy(B))
+end
+
+
+const CuVecPossiblyTracked{T} = Union{CuVector, TrackedArray{T, 1, CuVector{T}}} where T <: AbstractFloat
+const CuMatPossiblyTracked{T} = Union{CuVector, TrackedArray{T, 2, CuMatrix{T}}} where T <: AbstractFloat
+
+function cayley_orthog(x::CuVecPossiblyTracked{T}, d)::CuMatPossiblyTracked{T} where T <: AbstractFloat
+    I = cu(eye(d))            # segfault using UniformScaling I from LinearAlgebra. Not ideal.
+    S = make_skew(x, d)
+    return (I + S) \ (I - S)  # note this is the more efficient way around than for CPU (legacy)
+end
+
+
+# So far, so good. NOW I NEED TO IMPLEMENT INVERSE (INV) JUST LIKE I DID FOR
+# LDIV, FOR THE BACKWARD PASS. (So go through generic.jl in LinearAlgebra again...)
 
 end
