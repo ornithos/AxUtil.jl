@@ -1,6 +1,7 @@
 module CUDA
 
-using CuArrays
+using ..CuArrays
+using ..ArgCheck
 import ..Math: make_lt, make_lt_strict
 
 function make_lt(x::CuArray{T,1}, d::Int)::CuArray{T,2} where T <: Real
