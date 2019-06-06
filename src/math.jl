@@ -100,7 +100,7 @@ end
    because CuArrays.jl will not compile (e.g. on my machine) if no GPU. See
    @requires in AxUtil.jl and CUDA.jl files in this project. =#
 
-function make_lt(x::AbstractVector, d::Int)::Array{T,2} where T <: Real
+function make_lt(x::AbstractVector{T}, d::Int)::Array{T,2} where T <: Real
     @argcheck (length(x) == Int(d*(d+1)/2))
     make_lt!(zeros(T, d, d), x, d)
 end
@@ -119,7 +119,7 @@ function unmake_lt(M::AbstractMatrix{T}, d)::Array{T,1} where T <: Real
     return M[tril!(trues(d,d))]
 end
 
-function make_lt_strict(x::AbstractVector, d::Int)::Array{T,2} where T <: Real
+function make_lt_strict(x::AbstractVector{T}, d::Int)::Array{T,2} where T <: Real
     @argcheck (length(x) == Int(d*(d-1)/2))
     return make_lt_strict!(zeros(T, d, d), x, d)
 end
