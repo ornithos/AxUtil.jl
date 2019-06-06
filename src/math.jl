@@ -96,15 +96,22 @@ end
                     Special Matrix Constructors
 ==================================================================================#
 
-function make_lt(x::AbstractArray{T,1}, d::Int)::Array{T,2} where T <: Real
+#= have a CuArray version in CUDA file. Cannot make more generally available
+   because CuArrays.jl will not compile (e.g. on my machine) if no GPU. See
+   @requires in AxUtil.jl and CUDA.jl files in this project. =#
+
+function make_lt(x::AbstractVector, d::Int)::Array{T,2} where T <: Real
     @argcheck (length(x) == Int(d*(d+1)/2))
-    M = zeros(d,d)
+    make_lt!(zeros(T, d, d), x, d)
+end
+
+function make_lt!(out::AbstractMatrix{T}, x::AbstractArray{T,1}, d::Int)::Array{T,2} where T <: Real
     x_i = 1
     for j=1:d, i=j:d
-        M[i,j] = x[x_i]
+        out[i,j] = x[x_i]
         x_i += 1
     end
-    return M
+    return out
 end
 
 
@@ -112,16 +119,18 @@ function unmake_lt(M::AbstractMatrix{T}, d)::Array{T,1} where T <: Real
     return M[tril!(trues(d,d))]
 end
 
-
-function make_lt_strict(x::AbstractArray{T,1}, d::Int)::Array{T,2} where T <: Real
+function make_lt_strict(x::AbstractVector, d::Int)::Array{T,2} where T <: Real
     @argcheck (length(x) == Int(d*(d-1)/2))
-    M = zeros(T, d,d)
+    return make_lt_strict!(zeros(T, d, d), x, d)
+end
+
+function make_lt_strict!(out::AbstractMatrix{T}, x::AbstractVector, d::Int)::Array{T,2} where T <: Real
     x_i = 1
     for j=1:d-1, i=j+1:d
-        M[i,j] = x[x_i]
+        out[i,j] = x[x_i]
         x_i += 1
     end
-    return M
+    return out
 end
 
 
