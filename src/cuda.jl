@@ -1,10 +1,11 @@
 module CUDA
 
 using ..CuArrays
-import ..Math: @argcheck, LinearAlgebra
+import ..Math: @argcheck, LinearAlgebra, tril!
 import ..Math: make_lt, make_lt_strict, make_lt!, make_lt_strict!, cayley_orthog,
-            unmake_lt, unmake_lt_strict
+            unmake_lt, unmake_lt_strict, make_skew
 import ..Arr: eye
+import ..Flux: TrackedArray
 import Base: \, inv
 
 function make_lt(x::CuArray{T,1}, d::Int)::CuArray{T,2} where T <: Real
