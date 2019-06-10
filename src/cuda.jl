@@ -50,7 +50,7 @@ end
 function diag0(x::CuArray{T,1})::CuArray{T,2} where T <: Real
     d = length(x)
     M = CuArrays.zeros(T, d,d)
-    M[diagind(M)] = x
+    M[LinearAlgebra.diagind(M)] = x
     return M
 end
 
