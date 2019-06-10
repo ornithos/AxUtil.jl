@@ -5,7 +5,7 @@ import ..Math: @argcheck, LinearAlgebra, tril!
 import ..Math: make_lt, make_lt_strict, make_lt!, make_lt_strict!, cayley_orthog,
             unmake_lt, unmake_lt_strict, make_skew
 import ..Arr: eye
-import ..Flux: TrackedArray
+import ..Flux: TrackedArray, diag0
 import Base: \, inv
 
 function make_lt(x::CuArray{T,1}, d::Int)::CuArray{T,2} where T <: Real
@@ -47,6 +47,12 @@ function cayley_orthog(x::CuVecPossiblyTracked{T}, d)::CuMatPossiblyTracked{T} w
     return (I + S) \ (I - S)  # note this is the more efficient way around than for CPU (legacy)
 end
 
+function diag0(x::CuArray{T,1})::CuArray{T,2} where T <: Real
+    d = length(x)
+    M = CuArrays.zeros(T, d,d)
+    M[diagind(M)] = x
+    return M
+end
 
 # So far, so good. NOW I NEED TO IMPLEMENT INVERSE (INV) JUST LIKE I DID FOR
 # LDIV, FOR THE BACKWARD PASS. (So go through generic.jl in LinearAlgebra again...)
