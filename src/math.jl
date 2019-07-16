@@ -261,4 +261,152 @@ end
 get_angle2π(cθ, sθ) = (cθ >= 0 ? asin(sθ) : sθ >= 0 ? π - asin(sθ) : -asin(sθ) - π)
 get_angle360(cθ, sθ) = get_angle2π(cθ, sθ)* 360 / (2π)
 
+
+#=================================================================================
+                       Splines
+==================================================================================#
+
+# ported from my MATLAB utils
+struct BSpline{T}
+    k               # degree of each piecewise polynomial
+    t::Vector{T}    # knots; breakpoints
+    bdknots         # number of knots at boundaries
+end
+
+Base.length(s::BSpline) = length(s.t)
+
+"""
+  bspline(k, t)
+create bspline object of degree k, and knots -- possibly coin-cident.
+Constructor will assume discontinuity at boundaries.
+
+  bspline(k, t, 'boundaries', bb)
+as above, but constructor will adapt continuity at the
+boundaries:
+
+* bb = k     => discontinuity
+* bb = k - a => discontinuity in a'th derivative.
+
+with methods
+  * basis_eval(bspline, x)
+
+The resulting basis can then be used with your required loss function as reqd.
+Unfortunately I have not taken advantage of any sparsity properties (e.g. the
+bounded support of the spline basis), because I have better things to do :D.
+The Interpolations.jl package does indeed do this, but I can't find an easy way
+to extract the basis for use in e.g. penalised fits.
+
+follows de Boor - A Practical Guide to Splines (1978 / 2001).
+"""
+function BSpline(k::Int, t::AbstractVector{T}; bdknots=k) where T <: Real
+    @argcheck k > 0
+    @argcheck bdknots <= k
+    @assert issorted(t)
+    @argcheck length(unique(t)) > 1
+
+    if bdknots > 0
+        # add additional boundary knots to beginning of vector (if reqd)
+        first_not_bd = findfirst(t .!= t[1]) - 1
+        numaddl = max(0, bdknots - first_not_bd);
+        t       = vcat(repeat(t[1:1], numaddl), t);
+
+        # add additional boundary knots to end of vector (if reqd)
+        last_not_bd = findlast(t .!= t[end]) + 1
+        numaddl = max(0, bdknots - (length(t) - last_not_bd + 1));
+        t       = vcat(t, repeat(t[end:end], numaddl));
+    end
+    return BSpline{eltype(t)}(k, t, bdknots)
+end
+
+function basis_eval(obj::BSpline, x::AbstractVector{T}, nderiv::Int=0) where T <: Real
+    """
+        basis_eval(obj::BSpline, x [,nderiv])
+    evaluate the given basis at positions x = [x1, x2, ..., xm].
+    Uses recurrence B_{jk} = w_{jk} B_{j,degk-1} + (1-w_{jk}) B_{j+1,degk-1}.
+
+    Derivatives can be calculated instead by specifying the order in the third
+    argument (i.e. 0 = fn, 1 = 1st deriv, 2 = 2nd deriv, ...).
+
+    This function owes a lot to James Ramsay's implementation in the FDA
+    toolbox.
+    """
+    @argcheck
+    N               = length(x);
+    # if do_slow === nothing
+    #     do_slow = N < 100 ? true : false
+    # end
+
+    # recurrence assumes nondecreasing input sequence. Ensure this
+    # is so. (cf James Ramsay)
+    if minimum(diff(x)) < 0
+        reorder_perm = sortperm(x)
+        x = x[reorder_perm]
+        reordered = true;
+    else
+        reordered = false;
+    end
+    nt          = length(obj);
+
+    nbasis      = nt - obj.bdknots;
+    degk        = obj.k;
+    knotslower  = obj.t[1:nbasis];
+    index       = sortperm(vcat(knotslower, x));
+    pointer     = findall(index .> nbasis) - (1:N);
+    left        = max.(pointer, degk);
+    b           = repeat(hcat(1, zeros(1, degk)), N, 1);
+
+    # recursion directly from de Boor (and James Ramsay).
+    for jj = 1:degk
+        saved = zeros(N, 1);
+        for r = 1:jj
+            leftpr    = left .+ r;
+            tr        = obj.t[leftpr] - x;
+            tl        = x - obj.t[leftpr .- jj];
+
+            term      = b[1:N, r]./(tr+tl);
+            b[1:N,r]  = saved + tr.*term;
+            saved     = tl.*term;
+        end
+        b[1:N, jj+1]    = saved;
+    end
+
+    # now each end column in b corresponds to B_{i-degk+1,degk}, ..., B_{ik}
+    # for each i, where i corresponds to the knot to the left of
+    # the interval in which each x falls. So to place them all in
+    # the same (comparable matrix, we need to shift the columns
+    # about.
+
+    # James Ramsay has a cute MATALAB hack to restructure the matrix quickly
+    # (benchmarking in MATLAB demonstrates substantial improvement). However the
+    # naive (and simple) version here appears to perform just as quickly in julia.
+    # if do_slow
+    B = zeros(N, nt - obj.bdknots+1);
+    for nn = 1:N
+        B[nn, (left[nn]-degk+1):left[nn]+1] = b[nn,:];
+    end
+    # else
+    #     # James Ramsay version
+    #     ns    = nt - obj.bdknots + 1;
+    #     nbasis= nt - obj.bdknots*2 + degk + 1;
+    #     nx    = N;
+    #     nd    = 1;  # derivative num + 1
+    #     onenb = ones(Int, degk+1);
+    #     onenx = ones(Int, N);
+    #     onens = ones(Int, ns);
+    #
+    #     width = max(ns, nbasis) + degk + degk;
+    #
+    #     cc    = zeros(nx*width);
+    #     index = ((1-nx:0) .* onenb') + nx*((left.+1).*onenb' .+ onenx.*(-degk:0)');
+    #     cc[index] = b[nd.*(1:nx), :];
+    #     # (This uses the fact that, for a column vector  v  and a matrix  A ,
+    #     #  v(A)(i,j)=v(A(i,j)), all i,j.)  #=> [AB: ???]
+    #     B     = reshape(cc[(1-nx:0)*onens' .+  nx*onenx*(1:ns)'], nx, ns);
+    # end
+
+    # if reordered elements if they were not monotonically increasing, put back in original
+    reordered && (B[reorder_perm,:] = B);
+    return B
+end
+
 end
