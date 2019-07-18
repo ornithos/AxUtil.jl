@@ -248,14 +248,15 @@ function bsplineM(x::AbstractVector{T}, breaks::AbstractVector, norder::Int=4,
        b[nxn,j+1]  = saved;
        nxs = nxn;
     end
+    nxn = copy(nxs)
 
     # now use the fact that derivative values can be obtained by differencing:
     for jj=nd-1:-1:1
        j = k - jj;
-       nxs = (repeat(jj:nd-1, 1, nx) + repeat(nxs', nd-jj, 1))[:];
+       nxs = (repeat(jj:nd-1, 1, nx) + repeat(nxn', nd-jj, 1))[:];
        for r=j:-1:1
           leftpr     = left .+ r;
-          temp       = repeat(knots[leftpr] - knots[leftpr .- j], nd-jj)' / j;
+          temp       = repeat(knots[leftpr] - knots[leftpr .- j], 1, nd-jj)' / j;
           b[nxs, r]   = -b[nxs, r] ./ temp[:];
           b[nxs, r+1] =  b[nxs, r+1] - b[nxs, r];
        end
