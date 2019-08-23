@@ -269,4 +269,14 @@ function normclip!(ps, thrsh)
     return false
 end
 
+
+function dryrun_ADAM(o::ADAM, x, Δ)
+  η, β = o.eta, o.beta
+  mt, vt, βp = get!(o.state, x, (zero(x), zero(x), β))
+  m_new = β[1] .* mt + (1 - β[1]) .* Δ
+  v_new = β[2] .* vt + (1 - β[2]) .* Δ.^2
+  Δ_new =  m_new ./ (1 - βp[1]) ./ (sqrt.(v_new ./ (1 - βp[2])) .+ eps(eltype(Δ))) * η
+  return Δ_new
+end
+
 end

@@ -170,7 +170,7 @@ function bsplineM(x::AbstractVector{T}, breaks::AbstractVector, norder::Int=4,
     end
 
     if x[1] - breaks[1] < -1e-10 || x[n] - breaks[nbreaks] > 1e-10
-        display([x[1], x[n], breaks[1], breaks[nbreaks]])
+        display([x[1] x[n]; breaks[1] breaks[nbreaks]])
         error("Argument values out of range.")
     end
 
