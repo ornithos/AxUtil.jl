@@ -112,3 +112,34 @@ function construct_unique_filename(filestem; path="./", date_fmt="yyyy_mm_dd", e
     end
     return _construct_fnm(fnm_uid)
 end
+
+
+
+# BSON.bson("tmptest.bson", 
+#     par=Float32[0.1 2.345 6.78 9.0; 3.14 15.92 65.35 89.7; 2.71 8.2 8.18 2.8459; 4.66 9.2 0.16 0.91])
+# bson_raw = BSON.parse("tmptest.bson")[:par]   # ok... not raw exactly
+
+function parse_serialized_array(bson_raw)
+    type_string = bson_raw[:type][:name][end]
+    T = eval(Meta.parse(type_string))
+    
+    @assert isconcretetype(T) "The strategy here assumes the array is a concrete type."
+
+    io = IOBuffer()
+    write(io, bson_raw[:data])
+    seekstart(io)
+
+    flat = T[]
+    while true
+        try
+            element = read(io, T)
+            push!(flat, element)
+        catch e
+            if e isa EOFError
+                break
+            end
+            throw(e)
+        end
+    end
+    reshape(flat, bson_raw[:size]...)
+end
